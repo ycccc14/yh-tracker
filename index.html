@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="YH Tracker">
+  <meta name="theme-color" content="#F4F8F0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121611" media="(prefers-color-scheme: dark)">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-32.png">
+  <link rel="stylesheet" href="app.css?v=da5a236b37">
+  <title>YH Tracker</title>
+</head>
+<body>
+  <main id="view" aria-live="polite"></main>
+  <nav id="tabs" class="tabbar" hidden>
+    <button data-a="go" data-to="home" class="tab"><span class="ti" data-icon="home"></span><span>Home</span></button>
+    <button data-a="go" data-to="reports" class="tab"><span class="ti" data-icon="chart"></span><span>Reports</span></button>
+    <button data-a="add" class="fab" aria-label="Add income or expense"><span class="ti" data-icon="plus"></span></button>
+    <button data-a="go" data-to="budget" class="tab"><span class="ti" data-icon="budget"></span><span>Budget</span></button>
+    <button data-a="go" data-to="bills" class="tab"><span class="ti" data-icon="bell"></span><span>Bills</span><i class="tab-dot" hidden></i></button>
+  </nav>
+  <div id="sheets"></div>
+  <div id="toast" role="status"></div>
+  <div id="cover" hidden></div>
+  <script src="config.js?v=da5a236b37"></script>
+  <script src="shared.js?v=da5a236b37"></script>
+  <script src="js/calc.js?v=da5a236b37"></script>
+  <script src="js/core.js?v=da5a236b37"></script>
+  <script src="js/ui.js?v=da5a236b37"></script>
+  <script src="js/screens.js?v=da5a236b37"></script>
+  <script src="js/editors.js?v=da5a236b37"></script>
+  <script src="js/main.js?v=da5a236b37"></script>
+</body>
+</html>
