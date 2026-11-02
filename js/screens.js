@@ -168,6 +168,12 @@ function homeScreen() {
     right: eyeBtn() + `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
 
   if (CFG.demo) out += `<div class="banner"><p>🧪 <b>Preview with sample data.</b> Nothing here is saved to the cloud. <button class="link" data-a="demo-reset">Start over</button></p></div>`;
+  if (!CFG.demo && !M.lastSync) out += `<div class="banner"><p>⏳ Getting your data from your online backup…</p></div>`;
+  if (!CFG.demo && pushState() === 'default' && !M.pushNagOff) {
+    out += `<div class="banner"><div class="row"><p class="grow">🔔 <b>Turn on notifications</b> for bill reminders and when YC asks for your data.</p>
+      <button class="icon-btn plain" data-a="push-nag-off" aria-label="Not now">${icon('close')}</button></div>
+      <button class="btn primary block" data-a="push-on">Turn on notifications</button></div>`;
+  }
   if (pendingRequests().length) out += `<button class="banner tap-card" data-a="request-review"><p>📨 <b>YC asks for a copy of your data.</b> Tap to approve or decline.</p></button>`;
   if (!syncState.online && unsentCount()) out += `<div class="banner warn"><p>📡 You’re offline. ${unsentCount()} change(s) are saved on this phone and will upload when you’re back online.</p></div>`;
 

@@ -1,10 +1,10 @@
 // Keeps the app's files on the phone (opens instantly, works offline) and shows bill notifications.
 // Pushes from the server are empty: the text comes from the bills stored on this phone, so it is
 // always current (a bill paid a minute ago isn't mentioned) and nothing personal travels via Apple.
-importScripts('config.js?v=37237c76e3', 'shared.js?v=37237c76e3');
+importScripts('config.js?v=a501c0406d', 'shared.js?v=a501c0406d');
 
-const CACHE = 'yh-37237c76e3';
-const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=37237c76e3", "shared.js?v=37237c76e3", "app.css?v=37237c76e3", "js/account.js?v=37237c76e3", "js/calc.js?v=37237c76e3", "js/core.js?v=37237c76e3", "js/crypto.js?v=37237c76e3", "js/demo.js?v=37237c76e3", "js/editors.js?v=37237c76e3", "js/main.js?v=37237c76e3", "js/screens.js?v=37237c76e3", "js/ui.js?v=37237c76e3", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
+const CACHE = 'yh-a501c0406d';
+const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=a501c0406d", "shared.js?v=a501c0406d", "app.css?v=a501c0406d", "js/account.js?v=a501c0406d", "js/calc.js?v=a501c0406d", "js/core.js?v=a501c0406d", "js/crypto.js?v=a501c0406d", "js/demo.js?v=a501c0406d", "js/editors.js?v=a501c0406d", "js/main.js?v=a501c0406d", "js/screens.js?v=a501c0406d", "js/ui.js?v=a501c0406d", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

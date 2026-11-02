@@ -164,7 +164,7 @@ button.item:active, .item.tap:active { background: var(--soft); }
 .figures b { display: block; font-size: 15px; }
 
 /* ============================== buttons, chips, segments ============================== */
-.btn { border: 0; border-radius: 15px; min-height: 48px; padding: 0 16px; font-weight: 650; background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+.btn { text-decoration: none; border: 0; border-radius: 15px; min-height: 48px; padding: 0 16px; font-weight: 650; background: var(--card); color: var(--ink); box-shadow: var(--shadow);
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
 .btn:active { transform: scale(.98); filter: brightness(.96); }
 .btn.primary { background: var(--brand); color: var(--brand-ink); box-shadow: none; }

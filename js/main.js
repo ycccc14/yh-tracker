@@ -113,6 +113,7 @@ actions['push-on'] = async (el) => {
   el.disabled = false;
   render();
 };
+actions['push-nag-off'] = () => { M.pushNagOff = true; persist(); render(); toast('You can turn them on later in Bills'); };
 actions['push-test'] = async (el) => {
   el.disabled = true;
   try {

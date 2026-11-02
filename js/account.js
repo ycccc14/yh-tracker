@@ -29,6 +29,14 @@ const lockNote = '<p class="muted small">🔒 Your data is encrypted with your p
 const errLine = '<p class="small" id="form-err" style="color:var(--bad);min-height:18px"></p>';
 
 // ============================== sign in ==============================
+// Each server call takes ~2 s, so the password salt is fetched while the username is being typed.
+const saltCache = {};
+function saltFor(username) {
+  const k = username.trim().toLowerCase();
+  if (!saltCache[k]) saltCache[k] = api('loginStart', { username: username.trim() }).then((r) => r.salt).catch((e) => { delete saltCache[k]; throw e; });
+  return saltCache[k];
+}
+
 function showWelcome(note) {
   cover(`${appIcon}<div><h1>YH Tracker</h1><p class="muted" style="margin-top:6px">Sign in to see your money on any phone.</p></div>
     ${note ? `<div class="banner warn"><p>${esc(note)}</p></div>` : ''}
@@ -40,6 +48,11 @@ function showWelcome(note) {
     </section>
     <section class="card stack"><p class="muted">New here?</p><button class="btn block" data-a="show-signup">I have an invite code</button></section>
     ${lockNote}`);
+  let timer = 0;
+  const user = $('#in-user');
+  const early = () => { clearTimeout(timer); if (user.value.trim().length > 1) saltFor(user.value).catch(() => {}); };
+  user.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(early, 500); });
+  $('#in-pass').addEventListener('focus', early);
 }
 actions['show-welcome'] = () => showWelcome();
 
@@ -47,22 +60,21 @@ actions['signin-go'] = (el) => busy(el, 'Signing in…', async () => {
   const username = val('in-user').trim();
   const password = val('in-pass');
   if (!username || !password) throw new Error('Type your username and password.');
-  const { salt } = await api('loginStart', { username });
+  const salt = await saltFor(username);
   const k = await Crypt.fromPassword(password, salt);
   const r = await api('login', { username, auth: k.auth, device: deviceName() });
-  await startSession(r, await Crypt.unwrapKey(r.keyPw, k.kek));
+  await startSession(r, await Crypt.unwrapKey(r.keyPw, k.kek), false, salt);
 });
 
-// After signing in on this phone: a clean slate, then everything comes down from the backup.
-async function startSession(r, dk, fresh) {
+// After signing in on this phone: a clean slate, then the app opens straight away while everything
+// comes down from the backup (start() syncs; Home says so until the first sync is done).
+async function startSession(r, dk, fresh, salt) {
   await wipeLocal();
   M.token = r.token;
   M.dk = dk;
-  M.user = { id: r.userId, username: r.username, name: r.name || '', telegram: !!r.telegram };
+  M.user = { id: r.userId, username: r.username, name: r.name || '', telegram: !!r.telegram, salt };
   if (fresh) seedDefaults(r.name);
   await persist(true);
-  cover(`${appIcon}<h1>Welcome${r.name ? ', ' + esc(r.name) : ''} ✓</h1><p class="muted">Getting your data…</p>`);
-  await sync();
   history.replaceState(null, '', location.pathname + '#home');
   start();
 }
@@ -114,7 +126,7 @@ actions['signup-go'] = (el) => busy(el, 'Creating…', async () => {
   const backupKey = Crypt.newKey();
   const r = await api('signup', { invite, name, username, salt, auth: k.auth, keyPw: await Crypt.wrapKey(dk, k.kek),
     keyBackup: await Crypt.wrapKey(dk, backupKey), backupKey, device: deviceName() });
-  await startSession(Object.assign({ name }, r), dk, true);
+  await startSession(Object.assign({ name }, r), dk, true, salt);
   setTimeout(() => toast('Tip: link Telegram in Settings, so you can reset a forgotten password', 4500), 1500);
 });
 
@@ -163,7 +175,7 @@ actions['forgot-go'] = (el) => busy(el, 'Saving…', async () => {
   const salt = Crypt.newSalt();
   const k = await Crypt.fromPassword(password, salt);
   const r = await api('resetSave', { resetToken: f.resetToken, salt, auth: k.auth, keyPw: await Crypt.wrapKey(dk, k.kek), device: deviceName() });
-  await startSession(r, dk);
+  await startSession(r, dk, false, salt);
   toast('Password changed ✓', 3000);
 });
 
@@ -189,12 +201,13 @@ actions['change-password'] = () => {
 };
 actions['change-password-go'] = (el) => busy(el, 'Saving…', async () => {
   checkNewPassword(val('cp-new'), val('cp-new2'));
-  const username = M.user.username;
-  const { salt: oldSalt } = await api('loginStart', { username });
+  const oldSalt = M.user.salt || (await saltFor(M.user.username));
   const old = await Crypt.fromPassword(val('cp-old'), oldSalt);
   const salt = Crypt.newSalt();
   const k = await Crypt.fromPassword(val('cp-new'), salt);
   await api('changePassword', { oldAuth: old.auth, salt, auth: k.auth, keyPw: await Crypt.wrapKey(M.dk, k.kek) });
+  M.user = Object.assign({}, M.user, { salt });
+  persist();
   closeSheet();
   toast('Password changed ✓');
 });
@@ -212,9 +225,10 @@ actions['telegram'] = () => {
 };
 actions['tg-start'] = (el) => busy(el, 'Preparing…', async () => {
   const r = await api('tgLinkStart');
-  $('#tg-step').innerHTML = `<ol class="steps"><li><span>Open Telegram and tap <b>Start</b>.</span></li><li><span>Come back here and tap <b>Done</b>.</span></li></ol>
-    <a class="btn primary block" href="${esc(r.url)}" target="_blank" rel="noopener">Open Telegram</a>
-    <button class="btn block" data-a="tg-check">Done</button>`;
+  $('#tg-step').innerHTML = `<div class="stack"><section class="card"><ol class="steps"><li><span>Tap <b>Open Telegram</b>, then <b>Start</b> in Telegram.</span></li>
+      <li><span>Come back here and tap <b>Done</b>.</span></li></ol></section>
+    <a class="btn primary block" href="${esc(r.url)}" target="_blank" rel="noopener">✈️ Open Telegram</a>
+    <button class="btn block" data-a="tg-check">Done</button></div>`;
 });
 actions['tg-check'] = (el) => busy(el, 'Checking…', async () => {
   const r = await api('tgLinkCheck');
