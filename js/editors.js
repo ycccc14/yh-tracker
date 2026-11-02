@@ -1,13 +1,12 @@
 // Bottom-sheet editors: records (with the calculator), accounts, categories, budgets, bills and paying a bill.
 'use strict';
 
-const BANKS = [['Maybank', 'bank'], ['CIMB', 'bank'], ['Public Bank', 'bank'], ['RHB', 'bank'], ['Hong Leong', 'bank'], ['AmBank', 'bank'],
-  ['Bank Islam', 'bank'], ['BSN', 'bank'], ['UOB', 'bank'], ['OCBC', 'bank'], ['HSBC', 'bank'], ['Alliance Bank', 'bank'], ['Affin Bank', 'bank'],
-  ['Bank Rakyat', 'bank'], ['GXBank', 'bank'], ['ASB', 'savings'], ['Tabung Haji', 'savings'], ['Touch ’n Go eWallet', 'ewallet'],
-  ['GrabPay', 'ewallet'], ['ShopeePay', 'ewallet'], ['Boost', 'ewallet'], ['Cash', 'cash']];
 const EMOJIS = ['🍜', '🍔', '☕', '🧋', '🍱', '🛒', '🥬', '🚗', '⛽', '🚌', '🚕', '🅿️', '🏠', '💡', '💧', '📱', '🌐', '🛍️', '👗', '💄', '💊', '🏥', '🦷', '🎬',
   '🎮', '🎵', '📚', '🎓', '🛡️', '👨‍👩‍👧', '👶', '🐶', '🎁', '✈️', '🏨', '💳', '🏦', '💰', '💼', '🎉', '💻', '🧧', '↩️', '📦', '🔧', '🧾', '🙏', '💇'];
-const BILL_IDEAS = ['Rent', 'Electricity (TNB)', 'Water', 'Phone bill', 'Internet', 'Car loan', 'PTPTN', 'Credit card', 'Insurance', 'Netflix', 'Spotify'];
+// Common Malaysian bills, with the category each usually belongs to.
+const BILL_IDEAS = [['Rent', 'Rent'], ['TNB electricity', 'Bills'], ['Air (water)', 'Bills'], ['Indah Water', 'Bills'], ['Unifi / Time internet', 'Phone'],
+  ['Phone bill', 'Phone'], ['Astro', 'Entertainment'], ['Car loan', 'Loan'], ['House loan', 'Rent'], ['PTPTN', 'Loan'], ['Credit card', 'Loan'],
+  ['Insurance / Takaful', 'Insurance'], ['Road tax', 'Transport'], ['Cukai taksiran', 'Rent'], ['Cukai tanah', 'Rent'], ['Netflix', 'Entertainment'], ['Spotify', 'Entertainment']];
 const REMIND_BEFORE = [[0, 'On the day'], [1, '1 day before'], [2, '2 days before'], [3, '3 days before'], [7, '1 week before']];
 
 const shake = (el) => { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); };
@@ -15,8 +14,8 @@ const sheetState = () => (topSheet() || {})._st;
 
 function sheetHead(title, opts) {
   opts = opts || {};
-  return `<div class="sheet-head"><button class="icon-btn plain" data-a="close-sheet" aria-label="Close">${icon('close')}</button>
-    ${opts.middle || `<h2>${title}</h2>`}${opts.right || '<span style="width:44px"></span>'}</div>`;
+  return `<div class="sheet-head"><button class="icon-btn plain" data-a="${opts.back ? 'sheet-back' : 'close-sheet'}" aria-label="${opts.back ? 'Back' : 'Close'}">${icon(opts.back ? 'back' : 'close')}</button>
+    ${opts.middle || `<h2 class="ellipsis">${title}</h2>`}${opts.right || '<span class="head-space"></span>'}</div>`;
 }
 
 // Selects one chip in its group without redrawing the sheet.
@@ -27,8 +26,8 @@ function pick(el, attr) {
 
 function accountChips(action, selected, exclude) {
   const bal = balances();
-  return `<div class="chips scroll">${accounts().filter((a) => a.id !== exclude).map((a) => `<button class="chip ${a.id === selected ? 'on' : ''}" data-a="${action}" data-v="${a.id}">
-    ${accIcon(a)} ${esc(a.name)} <span class="num">${money(bal[a.id])}</span></button>`).join('')}</div>`;
+  return `<div class="chips scroll">${accounts().filter((a) => a.id !== exclude).map((a) => `<button class="chip acc-chip ${a.id === selected ? 'on' : ''}" data-a="${action}" data-v="${a.id}">
+    ${accBadge(a)}<span class="ellipsis">${esc(a.name)}</span><span class="num">${amt(bal[a.id])}</span></button>`).join('')}</div>`;
 }
 
 // ============================== add / edit a record ==============================
@@ -46,7 +45,8 @@ function openTxEditor(id, preset) {
   }
   preset = preset || {};
   const st = old ? Object.assign({}, old, { expr: Calc.fromNumber(old.amount) })
-    : { type: 'expense', expr: '', accountId: preset.acc && acc(preset.acc) ? preset.acc : defaultAccount(), toAccountId: '', categoryId: '', date: today(), note: '' };
+    : { type: preset.type === 'transfer' ? 'transfer' : 'expense', expr: '', accountId: preset.acc && acc(preset.acc) ? preset.acc : defaultAccount(), toAccountId: '',
+      categoryId: '', date: Shared.isDate(preset.date) ? preset.date : today(), note: '' };
   const seg = `<div class="seg type">${[['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer']]
     .map(([v, l]) => `<button class="${st.type === v ? 'on' : ''}" data-a="tx-type" data-v="${v}">${l}</button>`).join('')}</div>`;
   const sh = openSheet(sheetHead('', { middle: seg, right: old ? `<button class="icon-btn plain" data-a="tx-delete" aria-label="Delete">${icon('trash')}</button>` : '' }) +
@@ -69,7 +69,7 @@ function drawTx(sh) {
   } else {
     const cats = categories(st.type, true);
     body += `<div class="field"><span>Category</span><div class="cat-grid">${cats.map((c) => `<button class="cat ${c.id === st.categoryId ? 'on' : ''}" data-a="tx-cat" data-v="${c.id}">
-      <span class="e">${esc(c.icon)}</span><span>${esc(c.name)}</span></button>`).join('')}</div></div>
+      <span class="e">${esc(c.icon)}</span><span class="cname">${esc(c.name)}</span></button>`).join('')}</div></div>
       <div class="field"><span>${st.type === 'income' ? 'Into' : 'From'} account</span>${accountChips('tx-acc', st.accountId)}</div>`;
   }
   const t = today();
@@ -77,7 +77,7 @@ function drawTx(sh) {
   body += `<div class="field"><span>Date</span><div class="chips">
       <button class="chip ${st.date === t ? 'on' : ''}" data-a="tx-date" data-v="${t}">Today</button>
       <button class="chip ${st.date === y ? 'on' : ''}" data-a="tx-date" data-v="${y}">Yesterday</button>
-      <input type="date" class="chip ${st.date !== t && st.date !== y ? 'on' : ''}" value="${st.date}" max="${Shared.addDays(t, 366)}" data-change="tx-date-pick" aria-label="Pick a date">
+      <input type="date" class="chip date-chip ${st.date !== t && st.date !== y ? 'on' : ''}" value="${st.date}" max="${Shared.addDays(t, 366)}" data-change="tx-date-pick" aria-label="Pick a date">
     </div></div>
     <input class="input" placeholder="Note (optional)" maxlength="200" value="${esc(st.note)}" data-input="tx-note" enterkeyhint="done">`;
   $('.sheet-body', sh).innerHTML = body;
@@ -146,8 +146,8 @@ actions['tx-delete'] = async () => {
 };
 
 function openAdjustInfo(t) {
-  const sh = openSheet(sheetHead('Balance correction') + `<div class="sheet-body" style="text-align:center">
-    <div class="amount-box" style="text-align:center"><div class="amt num">${money(t.amount, { plus: true })}</div></div>
+  const sh = openSheet(sheetHead('Balance correction') + `<div class="sheet-body center-text">
+    <div class="amount-box center-text"><div class="amt num">${money(t.amount, { plus: true })}</div></div>
     <p class="muted">${esc((acc(t.accountId) || {}).name || '')} · ${fmtDate(t.date, true)}</p>
     <p class="muted small">Added by “Fix balance” so the app matches the bank.</p></div>
     <div class="sheet-foot"><button class="btn danger block" data-a="adjust-delete">Delete correction</button></div>`);
@@ -155,63 +155,102 @@ function openAdjustInfo(t) {
 }
 actions['adjust-delete'] = () => { remove('transactions', sheetState().id); closeSheet(); toast('Deleted'); };
 
-actions.add = (el) => openTxEditor(null, { acc: el.dataset.acc });
+actions.add = (el) => openTxEditor(null, { acc: el.dataset.acc, date: el.dataset.date, type: el.dataset.type });
 actions['edit-tx'] = (el) => openTxEditor(el.dataset.id);
 
 // ============================== accounts ==============================
+// New: 1) kind  2) bank / e-wallet (if the kind has a list)  3) details. Editing goes straight to 3.
 function openAccountEditor(id) {
-  const a = id ? S.accounts[id] : null;
-  const used = accounts(true).map((x) => x.color);
-  const st = a ? Object.assign({}, a) : { id: uid(), name: '', type: 'bank', opening: 0, color: ACC_COLORS.find((c) => used.indexOf(c) < 0) || ACC_COLORS[0],
-    order: accounts(true).length, archived: false };
-  const sh = openSheet(sheetHead(a ? 'Edit account' : 'New account') + '<div class="sheet-body"></div>' +
-    `<div class="sheet-foot"><button class="btn primary block" data-a="acc-save">Save</button></div>`, { cls: 'full' });
+  if (id) return openAccountForm(Object.assign({ last4: '', note: '', provider: '', excluded: false }, S.accounts[id]), false);
+  openSheet(sheetHead('New account') + `<div class="sheet-body"><p class="muted">What kind of account?</p><section class="card flush">${KIND_ORDER.map((k) => `<button class="item" data-a="acc-kind" data-v="${k}">
+    <span class="bubble">${KINDS[k].emoji}</span><span class="grow"><span class="title ellipsis">${KINDS[k].label}</span><span class="meta ellipsis">${KINDS[k].hint}</span></span>${icon('next')}</button>`).join('')}</section></div>`, { cls: 'full' });
+}
+
+function newAccount(kind, provider) {
+  const p = PROVIDERS[provider];
+  let name = p ? p[0] : kind === 'cash' ? 'Cash' : '';
+  if (p && kind === 'card') name = p[0] + ' credit card';
+  if (p && kind === 'savings' && PROVIDERS_FOR.bank.indexOf(provider) >= 0) name = p[0] + ' fixed deposit';
+  const n = accounts(true).length;
+  return { id: uid(), name, type: kind, provider: provider || '', opening: 0, color: p ? p[1] : CARD_COLORS[n % CARD_COLORS.length], order: n,
+    archived: false, excluded: false, last4: '', note: '' };
+}
+
+actions['acc-kind'] = (el) => {
+  const kind = el.dataset.v;
+  if (!PROVIDERS_FOR[kind]) { closeSheet(); openAccountForm(newAccount(kind, ''), true); return; }
+  const sh = openSheet(sheetHead('Choose', { back: true }) + `<div class="sheet-body"><p class="muted">${KINDS[kind].label}</p><section class="card flush">
+    ${PROVIDERS_FOR[kind].map((k) => `<button class="item" data-a="acc-provider" data-v="${k}">${accBadge({ provider: k })}<span class="grow"><span class="title ellipsis">${esc(PROVIDERS[k][0])}</span></span>${icon('next')}</button>`).join('')}
+    <button class="item" data-a="acc-provider" data-v=""><span class="logo emoji">✏️</span><span class="grow"><span class="title">Other</span><span class="meta ellipsis">Type the name yourself</span></span>${icon('next')}</button>
+    </section></div>`, { cls: 'full' });
+  sh._kind = kind;
+};
+actions['sheet-back'] = () => closeSheet();
+actions['acc-provider'] = (el) => {
+  const kind = topSheet()._kind;
+  closeAllSheets();
+  openAccountForm(newAccount(kind, el.dataset.v), true);
+};
+
+function openAccountForm(st, isNew) {
+  const sh = openSheet(sheetHead(isNew ? 'New account' : 'Edit account') + '<div class="sheet-body"></div>' +
+    `<div class="sheet-foot"><button class="btn primary block" data-a="acc-save">${isNew ? 'Add account' : 'Save'}</button></div>`, { cls: 'full' });
   sh._st = st;
-  sh._isNew = !a;
+  sh._isNew = isNew;
   drawAccount(sh);
+}
+
+function accountPreview(sh) {
+  const st = sh._st;
+  const bal = sh._isNew ? st.opening : balances()[st.id] + (st.opening - (S.accounts[st.id] || st).opening);
+  return cardFace(Object.assign({}, st, { name: st.name || 'Account name' }), bal, { big: true, tag: 'div' });
 }
 
 function drawAccount(sh) {
   const st = sh._st;
-  const owed = st.type === 'card';
-  let body = '';
-  if (sh._isNew) {
-    body += `<div class="field"><span>Quick pick</span><div class="chips">${BANKS.map(([n, t]) => `<button class="chip ${st.name === n ? 'on' : ''}" data-a="acc-pick" data-v="${esc(n)}" data-t="${t}">${esc(n)}</button>`).join('')}</div></div>`;
-  }
-  body += `<label class="field"><span>Name</span><input class="input" id="acc-name" maxlength="40" placeholder="e.g. Maybank savings" value="${esc(st.name)}" data-input="acc-name"></label>
-    <div class="field"><span>Type</span><div class="chips">${ACCOUNT_TYPES.map(([v, e, l]) => `<button class="chip ${st.type === v ? 'on' : ''}" data-a="acc-type" data-v="${v}">${e} ${l}</button>`).join('')}</div></div>
-    <div class="field"><span>${owed ? 'Amount owed now' : sh._isNew ? 'Balance right now' : 'Starting balance'}</span>
-      <button class="amount-btn num" data-a="acc-opening">${money(owed ? -st.opening : st.opening)}<span class="hint">🧮 Change</span></button>
-      ${!sh._isNew ? '<span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">The balance before your first record here. To match the bank today, use “Fix balance” on the account’s page instead.</span>' : ''}</div>
-    <div class="field"><span>Colour</span><div class="swatches">${ACC_COLORS.map((c) => `<button class="${st.color === c ? 'on' : ''}" style="background:${c}" data-a="acc-color" data-v="${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>`;
-  if (!sh._isNew) {
-    body += `<div class="item card" style="padding:12px 16px"><span class="grow"><div class="title">Hide this account</div><div class="meta">Keeps its history; hides it when adding records</div></span>
-      <label class="switch"><input type="checkbox" ${st.archived ? 'checked' : ''} data-change="acc-archive" aria-label="Hide"><i></i></label></div>
-      <button class="btn danger block" data-a="acc-delete">Delete account</button>`;
-  }
-  $('.sheet-body', sh).innerHTML = body;
+  const owed = isDebt(st);
+  const p = PROVIDERS[st.provider];
+  const colors = (p && CARD_COLORS.indexOf(p[1]) < 0 ? [p[1]] : []).concat(CARD_COLORS);
+  const showLast4 = ['bank', 'card', 'savings', 'prepaid', 'ewallet'].indexOf(st.type) >= 0;
+  const people = st.type === 'lent' || st.type === 'borrowed';
+  $('.sheet-body', sh).innerHTML = `<div id="acc-preview">${accountPreview(sh)}</div>
+    <div class="field"><span>Type</span><div class="chips scroll">${KIND_ORDER.map((k) => `<button class="chip ${st.type === k ? 'on' : ''}" data-a="acc-type" data-v="${k}">${KINDS[k].emoji} ${KINDS[k].label}</button>`).join('')}</div></div>
+    <section class="card form-rows">
+      <label class="frow"><span>${people ? 'Who' : 'Name'}</span><input id="acc-name" maxlength="40" placeholder="${people ? 'e.g. Mei' : 'e.g. Maybank savings'}" value="${esc(st.name)}" data-input="acc-name"></label>
+      ${showLast4 ? `<label class="frow"><span>Last 4 digits</span><input inputmode="numeric" maxlength="4" placeholder="Optional" value="${esc(st.last4)}" data-input="acc-last4"></label>` : ''}
+      <label class="frow"><span>Note</span><input maxlength="60" placeholder="Optional" value="${esc(st.note)}" data-input="acc-note"></label>
+    </section>
+    <div class="field"><span>${owed ? (sh._isNew ? 'Amount owed now' : 'Starting amount owed') : (sh._isNew ? 'Balance right now' : 'Starting balance')}</span>
+      <button class="amount-btn num" data-a="acc-opening"><span class="ellipsis">${money(owed ? -st.opening : st.opening)}</span><span class="hint">🧮 Change</span></button>
+      ${!sh._isNew ? '<span class="help">The balance before your first record here. To match the bank today, use “Fix balance” on the account’s page.</span>' : ''}</div>
+    <div class="field"><span>Card colour</span><div class="swatches">${colors.map((c) => `<button class="${st.color === c ? 'on' : ''}" style="background:${c}" data-a="acc-color" data-v="${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>
+    <section class="card flush">
+      <div class="item"><span class="grow"><span class="title">Count in net worth</span><span class="meta">Include this balance in your totals</span></span>
+        <label class="switch"><input type="checkbox" ${st.excluded ? '' : 'checked'} data-change="acc-excluded" aria-label="Count in net worth"><i></i></label></div>
+      <div class="item"><span class="grow"><span class="title">Show when adding records</span><span class="meta">Off hides it, but keeps its history</span></span>
+        <label class="switch"><input type="checkbox" ${st.archived ? '' : 'checked'} data-change="acc-archive" aria-label="Show when adding records"><i></i></label></div>
+    </section>
+    ${!sh._isNew ? '<button class="btn danger block" data-a="acc-delete">Delete account</button>' : ''}`;
 }
+const refreshPreview = () => { const sh = topSheet(); $('#acc-preview', sh).innerHTML = accountPreview(sh); };
 
-actions['acc-pick'] = (el) => {
-  const st = sheetState();
-  st.name = pick(el);
-  st.type = el.dataset.t;
-  drawAccount(topSheet());
-};
-actions['acc-name'] = (el) => { sheetState().name = el.value; };
+actions['acc-name'] = (el) => { sheetState().name = el.value; refreshPreview(); };
+actions['acc-last4'] = (el) => { el.value = el.value.replace(/\D/g, '').slice(0, 4); sheetState().last4 = el.value; refreshPreview(); };
+actions['acc-note'] = (el) => { sheetState().note = el.value; refreshPreview(); };
 actions['acc-type'] = (el) => {
   const st = sheetState();
-  const was = st.type === 'card';
+  const was = isDebt(st);
   st.type = pick(el);
-  if (was !== (st.type === 'card')) st.opening = -st.opening;
+  if (was !== isDebt(st)) st.opening = -st.opening;
   drawAccount(topSheet());
 };
-actions['acc-color'] = (el) => { sheetState().color = pick(el); };
-actions['acc-archive'] = (el) => { sheetState().archived = el.checked; };
+actions['acc-color'] = (el) => { sheetState().color = pick(el); refreshPreview(); };
+actions['acc-archive'] = (el) => { sheetState().archived = !el.checked; refreshPreview(); };
+actions['acc-excluded'] = (el) => { sheetState().excluded = !el.checked; refreshPreview(); };
 actions['acc-opening'] = async () => {
   const sh = topSheet();
   const st = sh._st;
-  const owed = st.type === 'card';
+  const owed = isDebt(st);
   const v = await askAmount(owed ? 'Amount owed' : 'Balance', Math.abs(st.opening), { allowZero: true });
   if (v === null) return;
   st.opening = owed ? -v : v;
@@ -221,7 +260,7 @@ actions['acc-save'] = () => {
   const sh = topSheet();
   const st = sh._st;
   st.name = (st.name || '').trim();
-  if (!st.name) { shake($('#acc-name', sh)); return toast('Give the account a name'); }
+  if (!st.name) { shake($('#acc-name', sh)); return toast(st.type === 'lent' || st.type === 'borrowed' ? 'Type who it’s with' : 'Give the account a name'); }
   if (accounts(true).some((a) => a.id !== st.id && a.name.toLowerCase() === st.name.toLowerCase())) return toast('You already have an account with that name');
   put('accounts', st);
   closeSheet();
@@ -230,28 +269,21 @@ actions['acc-save'] = () => {
 actions['acc-delete'] = async () => {
   const st = sheetState();
   if (live('transactions').some((t) => t.accountId === st.id || t.toAccountId === st.id)) {
-    return confirmSheet('This account has records', 'To keep your history, hide it instead (switch above). Delete its records first if you really want to delete it.', 'OK');
+    return confirmSheet('This account has records', 'To keep your history, switch off “Show when adding records” instead. Delete its records first if you really want to delete it.', 'OK');
   }
   if (await confirmSheet(`Delete ${st.name}?`, '', 'Delete', true)) {
     remove('accounts', st.id);
     closeSheet();
-    if (view.route === 'account') go('reports');
+    if (view.route === 'account') go('wallet');
   }
 };
 actions['acc-new'] = () => openAccountEditor();
 actions['acc-edit'] = (el) => openAccountEditor(el.dataset.id);
-actions['acc-move'] = (el) => {
-  const list = accounts(true).slice();
-  const i = list.findIndex((a) => a.id === el.dataset.id);
-  if (i < 1) return;
-  list.splice(i - 1, 0, list.splice(i, 1)[0]);
-  list.forEach((a, j) => { if ((a.order || 0) !== j) put('accounts', Object.assign({}, a, { order: j })); });
-};
 
 actions['acc-adjust'] = async (el) => {
   const a = acc(el.dataset.id);
   const cur = balances()[a.id];
-  const owed = a.type === 'card';
+  const owed = isDebt(a);
   const v = await askAmount(owed ? 'Amount owed now' : 'Actual balance', Math.abs(cur), { allowZero: true, ok: 'Fix',
     note: `What does ${a.name} show right now? A correction for the difference is added today.` });
   if (v === null) return;
@@ -274,15 +306,15 @@ function openCategoryEditor(id, kind) {
 
 function drawCategory(sh) {
   const st = sh._st;
-  let body = `<div class="row"><span class="bubble" style="width:56px;height:56px;font-size:30px">${esc(st.icon)}</span>
+  let body = `<div class="row"><span class="bubble big">${esc(st.icon)}</span>
       <label class="field grow"><span>Name</span><input class="input" id="cat-name" maxlength="30" value="${esc(st.name)}" data-input="cat-name" placeholder="e.g. Coffee"></label></div>
     <div class="field"><span>Icon</span><div class="emoji-grid">${EMOJIS.map((e) => `<button class="${st.icon === e ? 'on' : ''}" data-a="cat-icon" data-v="${e}">${e}</button>`).join('')}</div></div>`;
   if (st.kind === 'expense') {
-    body += `<div class="field"><span>Monthly budget</span><button class="amount-btn num" data-a="cat-budget">${st.budget > 0 ? money(st.budget) : 'No budget'}<span class="hint">🧮 Change</span></button></div>`;
+    body += `<div class="field"><span>Monthly budget</span><button class="amount-btn num" data-a="cat-budget"><span class="ellipsis">${st.budget > 0 ? money(st.budget) : 'No budget'}</span><span class="hint">🧮 Change</span></button></div>`;
   }
   if (!sh._isNew) {
-    body += `<div class="item card" style="padding:12px 16px"><span class="grow"><div class="title">Hide this category</div><div class="meta">Keeps old records; hides it when adding new ones</div></span>
-      <label class="switch"><input type="checkbox" ${st.archived ? 'checked' : ''} data-change="cat-archive" aria-label="Hide"><i></i></label></div>`;
+    body += `<section class="card flush"><div class="item"><span class="grow"><span class="title">Hide this category</span><span class="meta">Keeps old records; hides it when adding new ones</span></span>
+      <label class="switch"><input type="checkbox" ${st.archived ? 'checked' : ''} data-change="cat-archive" aria-label="Hide"><i></i></label></div></section>`;
   }
   $('.sheet-body', sh).innerHTML = body;
 }
@@ -311,6 +343,14 @@ actions['cat-save'] = () => {
 };
 actions['cat-new'] = () => openCategoryEditor(null, view.catKind);
 actions['cat-edit'] = (el) => openCategoryEditor(el.dataset.id);
+actions['cat-move'] = (el) => {
+  const list = live('categories').filter((c) => c.kind === view.catKind).sort((a, b) => (a.archived - b.archived) || (a.order || 0) - (b.order || 0));
+  const i = list.findIndex((c) => c.id === el.dataset.id);
+  const j = i + Number(el.dataset.d);
+  if (i < 0 || j < 0 || j >= list.length) return;
+  list.splice(j, 0, list.splice(i, 1)[0]);
+  list.forEach((c, k) => { if ((c.order || 0) !== k) put('categories', Object.assign({}, c, { order: k })); });
+};
 actions['set-budget'] = async (el) => {
   const c = cat(el.dataset.id);
   const v = await askAmount(`${c.icon} ${c.name} budget`, c.budget, { allowZero: true, note: 'How much a month? Set 0 for no budget.' });
@@ -322,8 +362,8 @@ actions['set-budget'] = async (el) => {
 // ============================== bills ==============================
 function openBillEditor(id) {
   const r = id ? S.reminders[id] : null;
-  const st = r ? Object.assign({}, r) : { id: uid(), title: '', amount: 0, due: Shared.addDays(today(), 7), repeat: 'month', before: 3, time: '09:00',
-    active: true, day: 0, accountId: '', categoryId: '', note: '', lastPaid: '' };
+  const st = r ? Object.assign({ auto: false }, r) : { id: uid(), title: '', amount: 0, due: Shared.addDays(today(), 7), repeat: 'month', before: 3, time: '09:00',
+    active: true, day: 0, accountId: '', categoryId: '', note: '', lastPaid: '', auto: false };
   const sh = openSheet(sheetHead(r ? 'Edit bill' : 'New bill', { right: r ? `<button class="icon-btn plain" data-a="bill-delete" aria-label="Delete">${icon('trash')}</button>` : '' }) +
     '<div class="sheet-body"></div>' + `<div class="sheet-foot"><button class="btn primary block" data-a="bill-save">Save</button></div>`, { cls: 'full' });
   sh._st = st;
@@ -335,15 +375,18 @@ function drawBill(sh) {
   const st = sh._st;
   const cats = categories('expense');
   let body = `<label class="field"><span>What’s the bill?</span><input class="input" id="bill-title" maxlength="60" placeholder="e.g. Rent" value="${esc(st.title)}" data-input="bill-title"></label>`;
-  if (sh._isNew) body += `<div class="chips">${BILL_IDEAS.map((t) => `<button class="chip" data-a="bill-idea" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
-  body += `<div class="field"><span>Amount (optional)</span><button class="amount-btn num" data-a="bill-amount">${st.amount ? money(st.amount) : 'Not set'}<span class="hint">🧮 Change</span></button></div>
+  if (sh._isNew) body += `<div class="chips">${BILL_IDEAS.map(([t]) => `<button class="chip" data-a="bill-idea" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
+  body += `<div class="field"><span>Amount</span><button class="amount-btn num" data-a="bill-amount"><span class="ellipsis">${st.amount ? money(st.amount) : 'Not set'}</span><span class="hint">🧮 Change</span></button></div>
     <label class="field"><span>${st.active ? 'Next due date' : 'Due date'}</span><input class="input" type="date" value="${st.due}" data-change="bill-due"></label>
     <div class="field"><span>Repeats</span><div class="chips">${Object.keys(Shared.REPEATS).map((k) => `<button class="chip ${st.repeat === k ? 'on' : ''}" data-a="bill-repeat" data-v="${k}">${Shared.REPEATS[k].label}</button>`).join('')}</div></div>
     <div class="field"><span>Remind me</span><div class="chips">${REMIND_BEFORE.map(([d, l]) => `<button class="chip ${Number(st.before) === d ? 'on' : ''}" data-a="bill-before" data-v="${d}">${l}</button>`).join('')}</div></div>
     <label class="field"><span>At what time</span><input class="input" type="time" value="${esc(st.time)}" data-change="bill-time"></label>
-    <div class="field"><span>Usually paid from (optional)</span>${accounts().length ? accountChips('bill-acc', st.accountId) : '<span class="muted small">Add an account first.</span>'}</div>
+    <div class="field"><span>Paid from</span>${accounts().length ? accountChips('bill-acc', st.accountId) : '<span class="help">Add an account first.</span>'}</div>
     <label class="field"><span>Category when paid</span><select class="input" data-change="bill-cat"><option value="">Choose…</option>
-      ${cats.map((c) => `<option value="${c.id}" ${c.id === st.categoryId ? 'selected' : ''}>${esc(c.icon)} ${esc(c.name)}</option>`).join('')}</select></label>`;
+      ${cats.map((c) => `<option value="${c.id}" ${c.id === st.categoryId ? 'selected' : ''}>${esc(c.icon)} ${esc(c.name)}</option>`).join('')}</select></label>
+    <section class="card flush"><div class="item"><span class="grow"><span class="title">Record automatically</span>
+      <span class="meta">On the due date, add the payment from the account above (good for auto-debit and subscriptions)</span></span>
+      <label class="switch"><input type="checkbox" ${st.auto ? 'checked' : ''} data-change="bill-auto" aria-label="Record automatically"><i></i></label></div></section>`;
   if (!sh._isNew && !st.active) body += `<button class="btn block" data-a="bill-reactivate">Start reminding again</button>`;
   $('.sheet-body', sh).innerHTML = body;
 }
@@ -352,12 +395,10 @@ actions['bill-title'] = (el) => { sheetState().title = el.value; };
 actions['bill-idea'] = (el) => {
   const st = sheetState();
   st.title = el.dataset.v;
-  if (!st.categoryId) {
-    const guess = { Rent: 'Rent', 'Electricity (TNB)': 'Bills', Water: 'Bills', 'Phone bill': 'Phone', Internet: 'Phone', 'Car loan': 'Loan', PTPTN: 'Loan',
-      'Credit card': 'Loan', Insurance: 'Insurance', Netflix: 'Entertainment', Spotify: 'Entertainment' }[st.title];
-    const c = guess && categories('expense').find((x) => x.name.indexOf(guess) === 0);
-    if (c) st.categoryId = c.id;
-  }
+  const idea = BILL_IDEAS.find(([t]) => t === st.title);
+  const c = idea && categories('expense').find((x) => x.name.indexOf(idea[1]) === 0);
+  if (c) st.categoryId = c.id;
+  if (/Road tax|Cukai|Insurance/.test(st.title)) st.repeat = /taksiran/.test(st.title) ? '6month' : 'year';
   drawBill(topSheet());
 };
 actions['bill-amount'] = async () => {
@@ -377,6 +418,7 @@ actions['bill-acc'] = (el) => {
   $$('[data-a="bill-acc"]', topSheet()).forEach((b) => b.classList.toggle('on', b.dataset.v === st.accountId));
 };
 actions['bill-cat'] = (el) => { sheetState().categoryId = el.value; };
+actions['bill-auto'] = (el) => { sheetState().auto = el.checked; };
 actions['bill-reactivate'] = () => { sheetState().active = true; drawBill(topSheet()); toast('Check the due date, then Save'); };
 actions['bill-save'] = () => {
   const sh = topSheet();
@@ -384,13 +426,14 @@ actions['bill-save'] = () => {
   st.title = (st.title || '').trim();
   if (!st.title) { shake($('#bill-title', sh)); return toast('Give the bill a name'); }
   if (!Shared.isDate(st.due)) return toast('Pick a due date');
+  if (st.auto && (!st.amount || !acc(st.accountId))) return toast('To record automatically, set the amount and the account it’s paid from', 3500);
   const old = S.reminders[st.id];
   if (!old || old.due !== st.due || !st.day) st.day = +st.due.slice(8);
   put('reminders', st);
   closeSheet();
-  const n = Shared.daysBetween(today(), st.due);
-  toast(`Saved ✓ Due ${Shared.relDays(n)}`);
-  if (sh._isNew && pushState() === 'default') setTimeout(() => toast('Tip: turn on notifications at the top of Bills', 3500), 2300);
+  const made = autoRecordBills();
+  toast(made ? `Saved ✓ ${made} payment(s) recorded` : `Saved ✓ Due ${Shared.relDays(Shared.daysBetween(today(), S.reminders[st.id].due))}`);
+  if (sh._isNew && pushState() === 'default' && !CFG.demo) setTimeout(() => toast('Tip: turn on notifications at the top of Bills', 3500), 2300);
 };
 actions['bill-delete'] = async () => {
   const st = sheetState();
@@ -416,10 +459,10 @@ actions['bill-pay'] = (el) => {
   const next = Shared.nextDue(r);
   const c = cat(billsCategory(r));
   const sh = openSheet(sheetHead('Pay bill') + `<div class="sheet-body">
-      <div style="text-align:center"><h2>${esc(r.title)}</h2><p class="muted small">Due ${fmtDate(r.due, true)}${next ? ' · then next on ' + fmtDate(next, true) : ''}</p></div>
-      <div class="field"><span>Amount paid</span><button class="amount-btn num" data-a="pay-amount">${money(st.amount)}<span class="hint">🧮 Change</span></button></div>
-      ${accounts().length ? `<div class="item card" style="padding:12px 16px"><span class="grow"><div class="title">Record as spending</div>
-        <div class="meta">${c ? esc(c.icon) + ' ' + esc(c.name) : ''}</div></span><label class="switch"><input type="checkbox" checked data-change="pay-record" aria-label="Record as spending"><i></i></label></div>
+      <div class="center-text"><h2>${esc(r.title)}</h2><p class="muted small">Due ${fmtDate(r.due, true)}${next ? ' · then next on ' + fmtDate(next, true) : ''}</p></div>
+      <div class="field"><span>Amount paid</span><button class="amount-btn num" data-a="pay-amount"><span class="ellipsis">${money(st.amount)}</span><span class="hint">🧮 Change</span></button></div>
+      ${accounts().length ? `<section class="card flush"><div class="item"><span class="grow"><span class="title">Record as spending</span>
+        <span class="meta ellipsis">${c ? esc(c.icon) + ' ' + esc(c.name) : ''}</span></span><label class="switch"><input type="checkbox" checked data-change="pay-record" aria-label="Record as spending"><i></i></label></div></section>
       <div class="field" id="pay-acc"><span>Paid from</span>${accountChips('pay-acc', st.accountId)}</div>` : ''}
     </div><div class="sheet-foot"><button class="btn primary block" data-a="pay-save">${icon('check')} Mark as paid</button></div>`);
   sh._st = st;
@@ -429,7 +472,7 @@ actions['pay-amount'] = async (el) => {
   const v = await askAmount('Amount paid', st.amount, { allowZero: true });
   if (v === null) return;
   st.amount = v;
-  el.firstChild.textContent = money(v);
+  $('.ellipsis', el).textContent = money(v);
 };
 actions['pay-record'] = (el) => { sheetState().record = el.checked; $('#pay-acc', topSheet()).hidden = !el.checked; };
 actions['pay-acc'] = (el) => { sheetState().accountId = pick(el); };

@@ -1,18 +1,90 @@
 // The app's screens. Each returns HTML for #view; main.js decides which one shows.
 'use strict';
 
-// What's on screen: route + the month and filters the screens share.
-const view = { route: 'home', arg: '', month: thisMonth(), recType: 'all', recAcc: '', recCat: '', recQuery: '', catKind: 'expense', showDone: false };
+// What's on screen: route + the periods and filters the screens share.
+const view = {
+  route: 'home', arg: '', month: thisMonth(), year: +thisMonth().slice(0, 4),
+  recMode: 'list', recDay: '', recType: 'all', recAcc: '', recCat: '', recQuery: '',
+  statPeriod: 'month', statKind: 'expense', catKind: 'expense', catSort: false, showDone: false, showHidden: false,
+};
 
-const ACCOUNT_TYPES = [['bank', '🏦', 'Bank'], ['savings', '🐷', 'Savings'], ['ewallet', '📱', 'E-wallet'], ['cash', '💵', 'Cash'], ['card', '💳', 'Credit card']];
-const accIcon = (a) => (ACCOUNT_TYPES.find((t) => t[0] === (a && a.type)) || ACCOUNT_TYPES[0])[1];
-const ACC_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+// ============================== account kinds & providers ==============================
+// debt: the balance is what's owed (shown and stored as a negative number).
+const KINDS = {
+  bank: { emoji: '🏦', label: 'Bank account', hint: 'Savings or current account', group: 'Bank accounts' },
+  ewallet: { emoji: '📱', label: 'E-wallet', hint: 'Touch ’n Go, GrabPay, ShopeePay, Boost, MAE', group: 'E-wallets' },
+  cash: { emoji: '💵', label: 'Cash', hint: 'Money in your purse', group: 'Cash' },
+  savings: { emoji: '🐷', label: 'Savings & investments', hint: 'ASB, Tabung Haji, EPF, fixed deposit', group: 'Savings & investments' },
+  prepaid: { emoji: '🎫', label: 'Prepaid card', hint: 'Touch ’n Go card, gift or member cards', group: 'Prepaid cards' },
+  card: { emoji: '💳', label: 'Credit card', hint: 'Shows how much you owe', group: 'Cards & PayLater', debt: true },
+  paylater: { emoji: '🧾', label: 'PayLater', hint: 'Atome, SPayLater, Grab PayLater', group: 'Cards & PayLater', debt: true },
+  lent: { emoji: '🤝', label: 'Money lent', hint: 'Someone owes you', group: 'Money lent' },
+  borrowed: { emoji: '🙏', label: 'Money borrowed', hint: 'You owe someone', group: 'Money borrowed', debt: true },
+};
+const KIND_ORDER = ['bank', 'ewallet', 'cash', 'savings', 'prepaid', 'card', 'paylater', 'lent', 'borrowed'];
+const kindOf = (a) => KINDS[a && a.type] || KINDS.bank;
+const isDebt = (a) => !!kindOf(a).debt;
 
+// Coloured badges with initials (not the companies' logos): [name, colour, text colour, initials].
+const PROVIDERS = {
+  maybank: ['Maybank', '#FFC83D', '#1A1A1A', 'MB'], cimb: ['CIMB', '#D7141A', '#fff', 'C'], pbb: ['Public Bank', '#C8102E', '#fff', 'PB'],
+  rhb: ['RHB', '#005DAA', '#fff', 'RHB'], hlb: ['Hong Leong', '#003A79', '#fff', 'HL'], ambank: ['AmBank', '#E31837', '#fff', 'Am'],
+  bimb: ['Bank Islam', '#8E1F4F', '#fff', 'BI'], bsn: ['BSN', '#0A4DA2', '#fff', 'BSN'], uob: ['UOB', '#00337A', '#fff', 'UOB'],
+  ocbc: ['OCBC', '#E2231A', '#fff', 'O'], hsbc: ['HSBC', '#DB0011', '#fff', 'H'], alliance: ['Alliance Bank', '#0083BE', '#fff', 'A'],
+  affin: ['Affin Bank', '#00468B', '#fff', 'Af'], rakyat: ['Bank Rakyat', '#00599C', '#fff', 'BR'], muamalat: ['Bank Muamalat', '#6D2077', '#fff', 'BM'],
+  agro: ['Agrobank', '#00843D', '#fff', 'Ag'], scb: ['Standard Chartered', '#0473EA', '#fff', 'SC'], gxbank: ['GXBank', '#5B2DE1', '#fff', 'GX'],
+  aeon: ['AEON Bank', '#B6007A', '#fff', 'AE'], boostbank: ['Boost Bank', '#E1251B', '#fff', 'BB'],
+  tng: ['Touch ’n Go eWallet', '#005BAA', '#fff', 'TNG'], grab: ['GrabPay', '#00B14F', '#fff', 'G'], shopee: ['ShopeePay', '#EE4D2D', '#fff', 'S'],
+  boost: ['Boost', '#E1251B', '#fff', 'B'], mae: ['MAE', '#FFC83D', '#1A1A1A', 'MAE'], bigpay: ['BigPay', '#2A2A2A', '#fff', 'BP'], setel: ['Setel', '#00A19C', '#fff', 'Se'],
+  asb: ['ASB', '#C8102E', '#fff', 'ASB'], th: ['Tabung Haji', '#00703C', '#fff', 'TH'], kwsp: ['EPF (KWSP)', '#003D7D', '#fff', 'EPF'],
+  versa: ['Versa', '#6C4BF4', '#fff', 'V'], stashaway: ['StashAway', '#0B2A5B', '#fff', 'SA'], tngcard: ['Touch ’n Go card', '#005BAA', '#fff', 'TNG'],
+  atome: ['Atome', '#F0FF5F', '#1A1A1A', 'At'], spaylater: ['SPayLater', '#EE4D2D', '#fff', 'SP'], grabpl: ['Grab PayLater', '#00B14F', '#fff', 'GP'],
+};
+const PROVIDERS_FOR = {
+  bank: ['maybank', 'cimb', 'pbb', 'rhb', 'hlb', 'ambank', 'bimb', 'bsn', 'uob', 'ocbc', 'hsbc', 'alliance', 'affin', 'rakyat', 'muamalat', 'agro', 'scb', 'gxbank', 'aeon', 'boostbank'],
+  card: ['maybank', 'cimb', 'pbb', 'rhb', 'hlb', 'ambank', 'uob', 'ocbc', 'hsbc', 'alliance', 'affin', 'bimb', 'scb', 'aeon'],
+  ewallet: ['tng', 'grab', 'shopee', 'boost', 'mae', 'bigpay', 'setel'],
+  savings: ['asb', 'th', 'kwsp', 'versa', 'stashaway', 'maybank', 'cimb', 'pbb', 'rhb', 'hlb'],
+  prepaid: ['tngcard'],
+  paylater: ['atome', 'spaylater', 'grabpl'],
+};
+const CARD_COLORS = ['#3E7D27', '#2a78d6', '#1baf7a', '#c98500', '#d55181', '#6250d6', '#e34948', '#eb6834', '#37474F', '#0B2A5B'];
+
+// Text colour that reads on a card colour.
+function inkOn(hex) {
+  const n = parseInt(String(hex || '#3E7D27').slice(1), 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.62 ? '#1A1A1A' : '#FFFFFF';
+}
+
+function accBadge(a, big) {
+  const p = a && PROVIDERS[a.provider];
+  if (p) return `<span class="logo${big ? ' big' : ''}" style="background:${p[1]};color:${p[2]}"><span>${esc(p[3])}</span></span>`;
+  return `<span class="logo emoji${big ? ' big' : ''}">${kindOf(a).emoji}</span>`;
+}
+
+// An account as a bank card. In a stack only its top row shows, except for the last card.
+function cardFace(a, bal, opts) {
+  opts = opts || {};
+  const color = a.color || (PROVIDERS[a.provider] || [])[1] || CARD_COLORS[0];
+  const ink = inkOn(color);
+  const owed = isDebt(a);
+  const tags = [a.excluded ? 'Not in total' : '', a.archived ? 'Hidden' : ''].filter(Boolean);
+  return `<${opts.tag || 'button'} class="wcard${opts.big ? ' big' : ''}" ${opts.tag ? '' : `data-a="go" data-to="account" data-id="${a.id}"`}
+      style="--c:${esc(color)};color:${ink}">
+    <span class="wtop">${accBadge(a)}<span class="grow"><span class="wname ellipsis">${esc(a.name)}</span><span class="wtype ellipsis">${kindOf(a).label}</span></span>
+      <span class="wbal num">${owed && bal < 0 ? '<span class="wlabel">Owe</span>' : ''}${amt(owed ? Math.abs(bal) : bal)}</span></span>
+    <span class="wbottom"><span class="ellipsis">${a.last4 ? '•••• ' + esc(a.last4) : esc(a.note || '')}</span>${tags.map((t) => `<span class="wtag">${t}</span>`).join('')}</span>
+  </${opts.tag || 'button'}>`;
+}
+
+// ============================== shared pieces ==============================
 function screenHead(title, opts) {
   opts = opts || {};
   return `<header class="top">${opts.back ? `<button class="icon-btn" data-a="go" data-to="${opts.back}" aria-label="Back">${icon('back')}</button>` : ''}
-    <div class="grow">${opts.sub ? `<div class="sub">${opts.sub}</div>` : ''}<h1 class="ellipsis">${title}</h1></div>${opts.right || ''}</header>`;
+    <div class="grow">${opts.sub ? `<div class="sub ellipsis">${opts.sub}</div>` : ''}<h1 class="ellipsis">${title}</h1></div>${opts.right || ''}</header>`;
 }
+const eyeBtn = () => `<button class="icon-btn" data-a="privacy" aria-label="${M.hideAmounts ? 'Show amounts' : 'Hide amounts'}">${icon(M.hideAmounts ? 'eyeOff' : 'eye')}</button>`;
 
 function txTitle(t) {
   if (t.type === 'transfer') return ['🔁', `${esc((acc(t.accountId) || {}).name || '?')} → ${esc((acc(t.toAccountId) || {}).name || '?')}`];
@@ -21,7 +93,7 @@ function txTitle(t) {
   return [c ? esc(c.icon) : '❔', c ? esc(c.name) : 'No category'];
 }
 
-// One transaction row. With accId, the amount is shown as it affected that account.
+// One record. With accId, the amount is shown as it changed that account.
 function txRow(t, opts) {
   opts = opts || {};
   const [emoji, title] = txTitle(t);
@@ -29,15 +101,32 @@ function txRow(t, opts) {
     .filter(Boolean).join(' · ');
   let v = Number(t.amount);
   let cls = '';
-  if (opts.accId) v = effect(t, opts.accId) / 100;
+  if (opts.accId) { v = effect(t, opts.accId) / 100; cls = v > 0 ? 'pos' : ''; }
   else if (t.type === 'expense') v = -v;
   else if (t.type === 'transfer') cls = 'muted';
-  if (v > 0 && t.type !== 'transfer' && !opts.accId) cls = 'pos';
-  if (opts.accId && v > 0) cls = 'pos';
+  else if (v > 0) cls = 'pos';
   return `<button class="item" data-a="edit-tx" data-id="${t.id}"><span class="bubble">${emoji}</span>
-    <span class="grow"><div class="title ellipsis">${title}</div>${meta ? `<div class="meta ellipsis">${meta}</div>` : ''}
-    ${opts.running !== undefined ? `<div class="meta">Balance ${money(opts.running)}</div>` : ''}</span>
-    <span class="amt num ${cls}">${t.type === 'transfer' && !opts.accId ? money(v) : money(v, { plus: true })}</span></button>`;
+    <span class="grow"><span class="title ellipsis">${title}</span>${meta ? `<span class="meta ellipsis">${meta}</span>` : ''}
+    ${opts.running !== undefined ? `<span class="meta ellipsis">Balance ${amt(opts.running)}</span>` : ''}</span>
+    <span class="amt num ${cls}">${t.type === 'transfer' && !opts.accId ? amt(v) : amt(v, { plus: true })}</span></button>`;
+}
+
+// A day's records in one card, with the day's net and a button to add to that day.
+function dayCard(date, list, opts) {
+  const net = list.reduce((s, x) => s + (x.type === 'income' ? cents(x.amount) : x.type === 'expense' ? -cents(x.amount) : 0), 0);
+  return `<section class="card flush"><div class="day-head"><span class="ellipsis"><b>${fmtDay(date)}</b></span>
+      <button class="chip xs" data-a="add" data-date="${date}" aria-label="Add a record on ${fmtDate(date)}">＋ Add</button>
+      <span class="grow"></span><span class="num muted">${net ? amt(net / 100, { plus: true }) : ''}</span></div>
+    ${list.map((t) => txRow(t, opts)).join('')}</section>`;
+}
+
+function byDay(list) {
+  const days = [];
+  list.forEach((t) => {
+    if (!days.length || days[days.length - 1][0] !== t.date) days.push([t.date, []]);
+    days[days.length - 1][1].push(t);
+  });
+  return days;
 }
 
 function billRow(r) {
@@ -45,73 +134,99 @@ function billRow(r) {
   const c = cat(r.categoryId);
   const label = { overdue: 'Overdue ' + -st.days + (st.days === -1 ? ' day' : ' days'), today: 'Due today', soon: 'Due ' + Shared.relDays(st.days), later: fmtDate(r.due) }[st.key];
   return `<div class="item tap" data-a="bill-edit" data-id="${r.id}"><span class="bubble">${c ? esc(c.icon) : '🔔'}</span>
-    <span class="grow"><div class="title ellipsis">${esc(r.title)}</div>
-    <div class="meta">${r.amount ? money(r.amount) + ' · ' : ''}${Shared.REPEATS[r.repeat] ? Shared.REPEATS[r.repeat].label : ''}</div>
-    <div style="margin-top:4px"><span class="badge ${st.key}">${label}</span></div></span>
+    <span class="grow"><span class="title ellipsis">${esc(r.title)}</span>
+    <span class="meta ellipsis">${r.amount ? amt(r.amount) + ' · ' : ''}${Shared.REPEATS[r.repeat] ? Shared.REPEATS[r.repeat].label : ''}${r.auto ? ' · Auto' : ''}</span>
+    <span class="badges"><span class="badge ${st.key}">${label}</span></span></span>
     <button class="btn sm primary" data-a="bill-pay" data-id="${r.id}">Pay</button></div>`;
+}
+
+// Total monthly budget across categories that have one.
+function budgetTotals(ym) {
+  const list = categories('expense').filter((c) => c.budget > 0).map((c) => budgetOf(c, ym));
+  const budget = list.reduce((s, b) => s + cents(b.budget), 0) / 100;
+  const spent = list.reduce((s, b) => s + cents(b.spent), 0) / 100;
+  const pct = budget ? spent / budget : 0;
+  return { budget, spent, left: Calc.round2(budget - spent), pct, level: !budget ? 'none' : pct > 1 ? 'over' : pct >= 0.8 ? 'warn' : 'ok' };
+}
+
+function perDayLeft(b, ym) {
+  if (ym !== thisMonth() || b.left <= 0) return '';
+  const daysLeft = Shared.daysInMonth(+ym.slice(0, 4), +ym.slice(5)) - +today().slice(8) + 1;
+  return `About <b>${amt(b.left / daysLeft)}</b> a day for ${daysLeft} more day${daysLeft > 1 ? 's' : ''}`;
 }
 
 // ============================== home ==============================
 function homeScreen() {
-  const name = setting('name') || 'YH';
+  const ym = thisMonth();
   const h = new Date().getHours();
   const hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  const mt = monthTotals(thisMonth());
-  const accs = accounts();
-  const bal = balances();
+  const mt = monthTotals(ym);
+  const prev = spentUpTo(shiftMonth(ym, -1), +today().slice(8));
+  const bud = budgetTotals(ym);
   const attn = billsAttention();
-  let out = screenHead(`${hello}, ${esc(name)}`, { sub: fmtDate(today(), true), right: `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
+  let out = screenHead(`${hello}, ${esc(setting('name') || 'YH')}`, { sub: fmtDate(today(), true),
+    right: eyeBtn() + `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
 
+  if (CFG.demo) out += `<div class="banner"><p>🧪 <b>Preview with sample data.</b> Nothing here is saved to the cloud. <button class="link" data-a="demo-reset">Start over</button></p></div>`;
   if (!syncState.online && unsentCount()) out += `<div class="banner warn"><p>📡 You’re offline. ${unsentCount()} change(s) are saved on this phone and will upload when you’re back online.</p></div>`;
 
-  out += `<section class="hero"><div class="label">Total balance</div><div class="big num">${money(totalBalance())}</div>
-    <div class="split"><div class="pill"><span class="small">In this month</span><b class="num">${money(mt.income)}</b></div>
-    <div class="pill"><span class="small">Spent this month</span><b class="num">${money(mt.expense)}</b></div></div></section>`;
+  let trend = '';
+  if (prev > 0 && !M.hideAmounts) {
+    const ch = (mt.expense - prev) / prev;
+    trend = `<span class="trend">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch * 100))}% vs same time last month</span>`;
+  }
+  out += `<section class="hero"><div class="label">Spent in ${MONTHS_LONG[+ym.slice(5) - 1]}</div>
+    <div class="big num">${amt(mt.expense)}</div>${trend}
+    <div class="trio"><div><span>Income</span><b class="num">${amt(mt.income)}</b></div>
+    <div><span>Net</span><b class="num">${amt(mt.net, { plus: true })}</b></div>
+    <div><span>Budget left</span><b class="num">${bud.budget ? amt(bud.left) : '—'}</b></div></div></section>`;
 
-  if (!accs.length) {
-    out += `<section class="card stack" style="text-align:center"><span style="font-size:44px">🏦</span><h2>Add your bank accounts</h2>
-      <p class="muted">Add each bank, e-wallet and your cash. Then every income and expense goes into the right one.</p>
+  if (!accounts(true).length) {
+    out += `<section class="card stack center-text"><span class="hero-emoji">🏦</span><h2>Add your accounts</h2>
+      <p class="muted">Add each bank, e-wallet and your cash, so every record goes into the right one.</p>
       <button class="btn primary block" data-a="acc-new">＋ Add an account</button></section>`;
+  }
+
+  if (bud.budget) {
+    out += `<button class="card tap-card" data-a="go" data-to="budget"><div class="spread"><h2>Monthly budget</h2>${budgetStatus(bud)}</div>
+      <div class="meta num">${amt(bud.spent)} of ${amt(bud.budget)}</div>${meter(bud)}
+      ${perDayLeft(bud, ym) ? `<p class="small muted">${perDayLeft(bud, ym)}</p>` : ''}</button>`;
   } else {
-    out += `<section><div class="card-head"><h2>Accounts</h2><button class="link" data-a="go" data-to="reports">Report</button></div><div class="hscroll">` +
-      accs.map((a) => `<button class="acc-card" data-a="go" data-to="account" data-id="${a.id}">
-        <span class="row"><span class="dot" style="background:${esc(a.color || ACC_COLORS[0])}"></span><span class="name ellipsis">${accIcon(a)} ${esc(a.name)}</span></span>
-        <span class="bal num ${bal[a.id] < 0 ? 'neg' : ''}">${money(bal[a.id])}</span></button>`).join('') +
-      `<button class="acc-card add" data-a="acc-new">＋ Add</button></div></section>`;
+    out += `<button class="card tap-card row" data-a="go" data-to="budget"><span class="bubble">🎯</span><span class="grow"><b>Set a monthly budget</b>
+      <span class="meta">See how much is left as you spend</span></span>${icon('next')}</button>`;
   }
 
-  if (attn.length) {
-    out += `<section class="card flush"><div class="card-head"><h2>Bills to pay</h2><button class="link" data-a="go" data-to="bills">All bills</button></div>` +
-      attn.slice(0, 3).map((x) => billRow(x.rem)).join('') + '</section>';
-  }
+  out += `<section class="card flush"><div class="card-head"><h2>Bills</h2><button class="link" data-a="go" data-to="bills">All bills</button></div>` +
+    (attn.length ? attn.slice(0, 3).map((x) => billRow(x.rem)).join('')
+      : `<button class="item" data-a="${reminders().length ? 'go' : 'bill-new'}" data-to="bills"><span class="bubble">✅</span><span class="grow"><span class="title">No bills due soon</span>
+        <span class="meta">${reminders().length ? 'You’re all caught up' : 'Add rent, phone or loans to get reminded'}</span></span>${icon('next')}</button>`) + '</section>';
 
-  const budgeted = categories('expense').filter((c) => c.budget > 0).map((c) => ({ c, b: budgetOf(c, thisMonth()) }))
-    .sort((x, y) => y.b.pct - x.b.pct).slice(0, 3);
-  if (budgeted.length) {
-    out += `<section class="card"><div class="card-head"><h2>Budget</h2><button class="link" data-a="go" data-to="budget">See all</button></div><div class="stack">` +
-      budgeted.map(({ c, b }) => `<div><div class="spread" style="margin-bottom:6px"><span class="ellipsis">${esc(c.icon)} ${esc(c.name)}</span>${budgetStatus(b)}</div>${meter(b)}</div>`).join('') +
-      '</div></section>';
-  }
-
-  const recent = txSorted().slice(0, 6);
-  out += `<section class="card flush"><div class="card-head"><h2>Recent</h2>${recent.length ? '<button class="link" data-a="go" data-to="records">See all</button>' : ''}</div>` +
-    (recent.length ? recent.map((t) => txRow(t, { date: true })).join('')
-      : `<div class="empty"><span class="e">🧾</span>Nothing recorded yet.<br>Tap the green ＋ to add income or an expense.</div>`) + '</section>';
+  const days = byDay(txSorted().slice(0, 12)).slice(0, 3);
+  out += `<div class="section-head"><h2>Recent</h2>${days.length ? '<button class="link" data-a="go" data-to="records">See all</button>' : ''}</div>`;
+  out += days.length ? days.map(([d, list]) => dayCard(d, list)).join('')
+    : `<section class="card"><div class="empty"><span class="e">🧾</span>Nothing recorded yet.<br>Tap the green ＋ to add spending or income.</div></section>`;
   return out;
 }
 
 // ============================== records ==============================
 function recordsScreen() {
-  let out = screenHead('Records', { back: 'home' }) + monthSwitch(view.month, 'month');
+  const mt = monthTotals(view.month);
+  let out = screenHead('Records', { right: eyeBtn() }) + monthSwitch(view.month, 'month');
+  out += `<div class="figures"><div><span>Spent</span><b class="num">${amt(mt.expense)}</b></div>
+    <div><span>Income</span><b class="num">${amt(mt.income)}</b></div><div><span>Net</span><b class="num">${amt(mt.net, { plus: true })}</b></div></div>`;
+  out += `<div class="seg"><button class="${view.recMode === 'list' ? 'on' : ''}" data-a="rec-mode" data-v="list">${icon('list')} List</button>
+    <button class="${view.recMode === 'cal' ? 'on' : ''}" data-a="rec-mode" data-v="cal">${icon('calendar')} Calendar</button></div>`;
+  if (view.recMode === 'cal') return out + calendar();
+
   const types = [['all', 'All'], ['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfers']];
   out += `<div class="chips scroll">${types.map(([v, l]) => `<button class="chip ${view.recType === v ? 'on' : ''}" data-a="rec-type" data-v="${v}">${l}</button>`).join('')}
-    ${accounts(true).map((a) => `<button class="chip ${view.recAcc === a.id ? 'on' : ''}" data-a="rec-acc" data-v="${a.id}">${accIcon(a)} ${esc(a.name)}</button>`).join('')}</div>`;
+    ${accounts(true).map((a) => `<button class="chip ${view.recAcc === a.id ? 'on' : ''}" data-a="rec-acc" data-v="${a.id}"><span class="ellipsis">${esc(a.name)}</span></button>`).join('')}</div>`;
   if (view.recCat) {
     const c = cat(view.recCat);
-    out += `<div class="chips"><button class="chip on" data-a="rec-cat" data-v="">${c ? esc(c.icon) + ' ' + esc(c.name) : 'Category'} ✕</button></div>`;
+    out += `<div class="chips"><button class="chip on" data-a="rec-cat" data-v=""><span class="ellipsis">${c ? esc(c.icon) + ' ' + esc(c.name) : 'Category'}</span> ✕</button></div>`;
   }
-  out += `<label class="row card" style="padding:4px 14px">${icon('search')}<input id="rec-q" class="input" style="border:0;padding:0" placeholder="Search notes or categories" value="${esc(view.recQuery)}" data-input="rec-search" type="search" enterkeyhint="search"></label>`;
-  return out + `<div id="rec-list">${recordsList()}</div>`;
+  out += `<label class="search">${icon('search')}<input id="rec-q" placeholder="Search notes, categories, amounts" value="${esc(view.recQuery)}" data-input="rec-search" type="search" enterkeyhint="search"></label>`;
+  return out + `<div id="rec-list" class="stack">${recordsList()}</div>`;
 }
 
 function recordsList() {
@@ -127,114 +242,168 @@ function recordsList() {
     }
     return true;
   });
-  if (!list.length) return `<section class="card"><div class="empty"><span class="e">🔍</span>No records for ${fmtMonth(view.month)}${view.recType !== 'all' || view.recAcc || view.recCat || q ? ' with these filters' : ''}.</div></section>`;
-  let inc = 0;
-  let exp = 0;
-  list.forEach((t) => { if (t.type === 'income') inc += cents(t.amount); if (t.type === 'expense') exp += cents(t.amount); });
-  let out = `<div class="figures" style="margin:0 0 16px"><div><span class="small muted">In</span><b class="num">${money(inc / 100)}</b></div>
-    <div><span class="small muted">Out</span><b class="num">${money(exp / 100)}</b></div><div><span class="small muted">Net</span><b class="num">${money((inc - exp) / 100, { plus: true })}</b></div></div>`;
-  out += '<section class="card flush">';
-  let day = '';
-  list.forEach((t) => {
-    if (t.date !== day) {
-      day = t.date;
-      const net = list.filter((x) => x.date === day).reduce((s, x) => s + (x.type === 'income' ? cents(x.amount) : x.type === 'expense' ? -cents(x.amount) : 0), 0);
-      out += `<div class="day-head"><span>${fmtDay(day)}</span><span class="num">${net ? money(net / 100, { plus: true }) : ''}</span></div>`;
-    }
-    out += txRow(t, view.recAcc ? { accId: view.recAcc } : {});
-  });
-  return out + '</section>';
+  if (!list.length) {
+    return `<section class="card"><div class="empty"><span class="e">🔍</span>No records in ${fmtMonth(view.month)}${view.recType !== 'all' || view.recAcc || view.recCat || q ? ' with these filters' : ''}.</div></section>`;
+  }
+  return byDay(list).map(([d, l]) => dayCard(d, l, view.recAcc ? { accId: view.recAcc } : {})).join('');
 }
 
-// ============================== reports ==============================
-function reportsScreen() {
+// Month calendar: each day shows its spending and income; tap a day to see and add its records.
+function calendar() {
   const ym = view.month;
-  const isNow = ym === thisMonth();
-  const end = isNow ? '' : monthEnd(ym);
-  const bal = balances(end);
-  const accs = accounts();
-  let out = screenHead('Reports') + monthSwitch(ym, 'month');
-
-  // Bank balances
-  out += `<section class="card flush"><div class="card-head"><h2>Bank balances</h2><span class="muted small">${isNow ? 'now' : 'on ' + fmtDate(end)}</span></div>`;
-  if (!accs.length) out += `<div class="empty">No accounts yet. <button class="link" data-a="acc-new">Add one</button></div>`;
-  accs.forEach((a) => {
-    const m = monthTotals(ym, a.id);
-    out += `<button class="item" data-a="go" data-to="account" data-id="${a.id}"><span class="bubble">${accIcon(a)}</span>
-      <span class="grow"><div class="row"><span class="dot" style="background:${esc(a.color || ACC_COLORS[0])}"></span><span class="title ellipsis">${esc(a.name)}</span></div>
-      <div class="meta">${fmtMonthShort(ym)}: in ${money(m.moneyIn)}<br>out ${money(m.moneyOut)}</div></span>
-      <span class="amt num ${bal[a.id] < 0 ? 'neg' : ''}">${money(bal[a.id])}</span></button>`;
+  const [y, m] = ym.split('-').map(Number);
+  const days = Shared.daysInMonth(y, m);
+  const first = new Date(y, m - 1, 1).getDay();
+  const t = today();
+  if (!view.recDay || view.recDay.slice(0, 7) !== ym) view.recDay = t.slice(0, 7) === ym ? t : ym + '-01';
+  const per = {};
+  txInMonth(ym).forEach((x) => {
+    const p = per[x.date] || (per[x.date] = { out: 0, inc: 0 });
+    if (x.type === 'expense') p.out += cents(x.amount);
+    if (x.type === 'income') p.inc += cents(x.amount);
   });
-  if (accs.length > 1) out += `<div class="item"><span class="bubble">Σ</span><span class="grow title">Total</span><span class="amt num">${money(totalBalance(end))}</span></div>`;
-  out += '</section>';
+  const short = (c) => (M.hideAmounts ? '•••' : moneyShort(c / 100));
+  let cells = DAYS.map((d) => `<span class="cal-dow">${d.slice(0, 2)}</span>`).join('');
+  for (let i = 0; i < first; i++) cells += '<span></span>';
+  for (let d = 1; d <= days; d++) {
+    const ds = ym + '-' + Shared.pad(d);
+    const p = per[ds];
+    cells += `<button class="cal-day${ds === t ? ' today' : ''}${ds === view.recDay ? ' on' : ''}${ds > t ? ' future' : ''}" data-a="cal-day" data-v="${ds}">
+      <b>${d}</b>${p && p.out ? `<span class="o">−${short(p.out)}</span>` : ''}${p && p.inc ? `<span class="i">+${short(p.inc)}</span>` : ''}</button>`;
+  }
+  const list = txInMonth(ym).filter((x) => x.date === view.recDay);
+  return `<section class="card cal">${cells}</section>
+    <div class="section-head"><h2 class="ellipsis">${fmtDate(view.recDay, true)}</h2><button class="btn sm primary" data-a="add" data-date="${view.recDay}">＋ Add</button></div>
+    ${list.length ? `<section class="card flush">${list.map((x) => txRow(x)).join('')}</section>` : '<section class="card"><div class="empty">Nothing on this day.</div></section>'}`;
+}
 
-  // Income vs spending, 6 months
-  const months = [];
-  for (let i = 5; i >= 0; i--) months.push(shiftMonth(ym, -i));
-  const mt = monthTotals(ym);
-  out += `<section class="card"><div class="card-head"><h2>Income vs spending</h2></div>
-    ${columnsChart(months.map((m) => { const t = monthTotals(m); return { label: fmtMonthShort(m), income: t.income, expense: t.expense, current: m === ym,
-      tip: `${fmtMonthShort(m)}: in ${money(t.income)} · out ${money(t.expense)}` }; }))}
-    <div class="figures"><div><span class="small muted">Income</span><b class="num">${money(mt.income)}</b></div>
-    <div><span class="small muted">Spending</span><b class="num">${money(mt.expense)}</b></div>
-    <div><span class="small muted">Saved</span><b class="num ${mt.net < 0 ? 'neg' : ''}">${money(mt.net, { plus: true })}</b></div></div></section>`;
+// ============================== stats ==============================
+function statsScreen() {
+  const month = view.statPeriod === 'month';
+  const period = month ? view.month : String(view.year);
+  const kind = view.statKind;
+  const by = byCategoryIn(period, kind);
+  const total = Object.values(by).reduce((s, v) => s + v, 0);
+  let out = screenHead('Stats', { right: eyeBtn() }) +
+    `<div class="seg"><button class="${month ? 'on' : ''}" data-a="stat-period" data-v="month">Month</button><button class="${month ? '' : 'on'}" data-a="stat-period" data-v="year">Year</button></div>` +
+    (month ? monthSwitch(view.month, 'month') : yearSwitch(view.year, 'year')) +
+    `<div class="seg type"><button class="${kind === 'expense' ? 'on' : ''}" data-a="stat-kind" data-v="expense">Spending</button><button class="${kind === 'income' ? 'on' : ''}" data-a="stat-kind" data-v="income">Income</button></div>`;
 
-  out += categoryReport(ym, 'expense', 'Spending by category');
-  out += categoryReport(ym, 'income', 'Income by category');
+  const days = month ? (view.month === thisMonth() ? +today().slice(8) : Shared.daysInMonth(view.year, +view.month.slice(5))) : 0;
+  const months = month ? 0 : (String(view.year) === thisMonth().slice(0, 4) ? +thisMonth().slice(5) : 12);
+  const avg = month ? total / Math.max(1, days) : total / Math.max(1, months);
+  out += `<section class="card"><div class="muted small">${kind === 'expense' ? 'Spent' : 'Income'} in ${month ? fmtMonth(view.month) : view.year}</div>
+    <div class="total num">${amt(total)}</div><div class="muted small">Average ${amt(avg)} a ${month ? 'day' : 'month'}</div></section>`;
+
+  const rows = Object.keys(by).map((id) => {
+    const c = cat(id);
+    return { emoji: c ? esc(c.icon) : '❔', label: c ? esc(c.name) : 'No category', value: by[id], pct: Math.round((by[id] / total) * 100) + '%',
+      attrs: `data-a="cat-records" data-id="${esc(id)}"` };
+  }).sort((a, b) => b.value - a.value);
+
+  if (!month && rows.length) {
+    out += `<div class="top3">${rows.slice(0, 3).map((r, i) => `<div class="top-tile t${i + 1}"><span class="rank-badge">TOP ${i + 1}</span>
+      <span class="spread"><span class="ellipsis"><b>${r.label}</b></span><span class="tile-emoji">${r.emoji}</span></span>
+      <span class="spread small"><span class="num">${amt(r.value)}</span><span class="muted">${r.pct}</span></span></div>`).join('')}</div>`;
+  }
+
+  if (month) {
+    const ym = view.month;
+    const per = {};
+    txInMonth(ym).forEach((t) => { if (t.type === kind) per[t.date] = (per[t.date] || 0) + cents(t.amount); });
+    const n = Shared.daysInMonth(+ym.slice(0, 4), +ym.slice(5));
+    const data = [];
+    for (let d = 1; d <= n; d++) {
+      const ds = ym + '-' + Shared.pad(d);
+      data.push({ label: String(d), value: (per[ds] || 0) / 100, current: ds === today(), tip: `${d} ${fmtMonthShort(ym)}: ${tipMoney((per[ds] || 0) / 100)}` });
+    }
+    out += `<section class="card"><div class="card-head"><h2>${kind === 'expense' ? 'Spending' : 'Income'} per day</h2></div>${barsChart(data, 5)}</section>`;
+  } else {
+    const data = [];
+    for (let i = 1; i <= 12; i++) {
+      const ym = view.year + '-' + Shared.pad(i);
+      const mt = monthTotals(ym);
+      data.push({ label: MONTHS[i - 1].slice(0, 1), income: mt.income, expense: mt.expense, current: ym === thisMonth(),
+        tip: `${MONTHS[i - 1]}: in ${tipMoney(mt.income)} · out ${tipMoney(mt.expense)}` });
+    }
+    out += `<section class="card"><div class="card-head"><h2>Income vs spending</h2></div>${columnsChart(data)}</section>`;
+  }
+
+  out += `<section class="card"><div class="card-head"><h2>By category</h2><span class="muted small">${rows.length} categor${rows.length === 1 ? 'y' : 'ies'}</span></div>
+    ${rows.length ? rankList(rows, kind === 'income' ? 'income' : '') : `<div class="empty">Nothing in ${month ? fmtMonth(view.month) : view.year}.</div>`}</section>`;
   return out;
 }
 
-function categoryReport(ym, kind, title) {
-  const by = byCategory(ym, kind);
-  const total = Object.values(by).reduce((s, v) => s + v, 0);
-  const rows = Object.keys(by).map((id) => {
-    const c = cat(id);
-    return { label: c ? `${esc(c.icon)} ${esc(c.name)}` : '❔ No category', value: by[id], sub: Math.round((by[id] / total) * 100) + '%',
-      attrs: `data-a="cat-records" data-id="${esc(id)}"` };
-  }).sort((a, b) => b.value - a.value);
-  return `<section class="card"><div class="card-head"><h2>${title}</h2><span class="num small muted">${money(total)}</span></div>
-    ${rows.length ? rankBars(rows, kind === 'income' ? 'income' : '') : `<div class="empty">Nothing in ${fmtMonth(ym)}.</div>`}</section>`;
+// ============================== wallet ==============================
+function walletScreen() {
+  const bal = balances();
+  const nw = netWorth();
+  const all = accounts(true);
+  let out = screenHead('Wallet', { right: eyeBtn() + `<button class="icon-btn" data-a="add" data-type="transfer" aria-label="Transfer">${icon('transfer')}</button>` +
+    `<button class="icon-btn" data-a="acc-new" aria-label="Add account">${icon('plus')}</button>` });
+  out += `<section class="hero"><div class="label">Net worth</div><div class="big num">${amt(nw.net)}</div>
+    <div class="duo"><div><span>↗ Assets</span><b class="num">${amt(nw.assets)}</b></div><div><span>↘ Debts</span><b class="num">${amt(nw.debts)}</b></div></div></section>`;
+  if (!all.length) {
+    return out + `<section class="card stack center-text"><span class="hero-emoji">💳</span><h2>No accounts yet</h2>
+      <p class="muted">Add your banks, e-wallets, cards and cash.</p><button class="btn primary block" data-a="acc-new">＋ Add an account</button></section>`;
+  }
+  const groups = [];
+  KIND_ORDER.forEach((k) => { const g = KINDS[k].group; if (groups.indexOf(g) < 0) groups.push(g); });
+  groups.forEach((g) => {
+    const list = all.filter((a) => !a.archived && kindOf(a).group === g);
+    if (!list.length) return;
+    const debt = isDebt(list[0]);
+    const sum = list.reduce((s, a) => s + cents(bal[a.id]), 0) / 100;
+    const base = debt ? nw.debts : nw.assets;
+    const share = base ? Math.round((Math.abs(sum) / base) * 100) : 0;
+    out += `<div class="section-head"><h2 class="ellipsis">${g}</h2><span class="pct${debt ? ' debt' : ''}">${share}%</span><span class="grow"></span>
+      <span class="muted small num">${debt ? 'Owe ' + amt(Math.abs(sum)) : amt(sum)}</span></div>
+      <div class="cards">${list.map((a) => cardFace(a, bal[a.id])).join('')}</div>`;
+  });
+  const hidden = all.filter((a) => a.archived);
+  if (hidden.length) {
+    out += `<button class="link" data-a="toggle-hidden">${view.showHidden ? 'Hide' : 'Show'} hidden accounts (${hidden.length})</button>`;
+    if (view.showHidden) out += `<div class="cards">${hidden.map((a) => cardFace(a, bal[a.id])).join('')}</div>`;
+  }
+  return out;
 }
 
 // ============================== one account ==============================
 function accountScreen(id) {
   const a = acc(id);
-  if (!a || a.deleted) return screenHead('Account', { back: 'reports' }) + '<div class="empty">This account was deleted.</div>';
+  if (!a || a.deleted) return screenHead('Account', { back: 'wallet' }) + '<div class="empty">This account was deleted.</div>';
   const ym = view.month;
   const isNow = ym === thisMonth();
   const startBal = balances(Shared.addDays(ym + '-01', -1))[id] || 0;
   const list = txInMonth(ym).filter((t) => t.accountId === id || t.toAccountId === id);
   const m = monthTotals(ym, id);
-  let out = screenHead(`${accIcon(a)} ${esc(a.name)}`, { back: 'reports', right: `<button class="icon-btn" data-a="acc-edit" data-id="${id}" aria-label="Edit account">${icon('edit')}</button>` });
-  out += `<section class="hero"><div class="label">${isNow ? 'Balance now' : 'Balance on ' + fmtDate(monthEnd(ym))}</div>
-    <div class="big num">${money(balances(isNow ? '' : monthEnd(ym))[id])}</div>
-    <div class="split"><div class="pill"><span class="small">Money in</span><b class="num">${money(m.moneyIn)}</b></div>
-    <div class="pill"><span class="small">Money out</span><b class="num">${money(m.moneyOut)}</b></div></div></section>`;
+  let out = screenHead(esc(a.name), { back: 'wallet', right: eyeBtn() + `<button class="icon-btn" data-a="acc-edit" data-id="${id}" aria-label="Edit account">${icon('edit')}</button>` });
+  out += cardFace(a, balances(isNow ? '' : monthEnd(ym))[id], { big: true, tag: 'div' });
+  out += `<div class="row-btns"><button class="btn" data-a="add" data-acc="${id}">＋ Record</button><button class="btn" data-a="add" data-type="transfer" data-acc="${id}">${icon('transfer')} Transfer</button>
+    <button class="btn" data-a="acc-adjust" data-id="${id}">⚖️ Fix balance</button></div>`;
   out += monthSwitch(ym, 'month');
+  out += `<div class="figures two"><div><span>Money in</span><b class="num">${amt(m.moneyIn)}</b></div><div><span>Money out</span><b class="num">${amt(m.moneyOut)}</b></div></div>`;
 
   // Balance at the end of each day of the month (up to today).
   const days = isNow ? +today().slice(8) : Shared.daysInMonth(+ym.slice(0, 4), +ym.slice(5));
-  const byDay = {};
-  list.forEach((t) => { byDay[t.date] = (byDay[t.date] || 0) + effect(t, id); });
+  const perDay = {};
+  list.forEach((t) => { perDay[t.date] = (perDay[t.date] || 0) + effect(t, id); });
   let run = cents(startBal);
   const pts = [];
   for (let d = 1; d <= days; d++) {
-    const ds = ym + '-' + Shared.pad(d);
-    run += byDay[ds] || 0;
-    pts.push({ label: String(d), value: run / 100, tip: `${d} ${fmtMonthShort(ym)}: ${money(run / 100)}` });
+    run += perDay[ym + '-' + Shared.pad(d)] || 0;
+    pts.push({ label: String(d), value: run / 100, tip: `${d} ${fmtMonthShort(ym)}: ${tipMoney(run / 100)}` });
   }
-  if (pts.length) out += `<section class="card"><div class="card-head"><h2>Balance this month</h2></div>${lineChart(pts.length === 1 ? [{ label: '', value: startBal, tip: money(startBal) }].concat(pts) : pts, days > 20 ? 7 : days > 10 ? 3 : 1)}</section>`;
-
-  out += `<div class="row"><button class="btn grow" data-a="acc-adjust" data-id="${id}">⚖️ Fix balance</button>
-    <button class="btn grow" data-a="add" data-acc="${id}">＋ Add record</button></div>`;
-
-  // Newest first, each with the balance right after it.
-  const asc = list.slice().reverse();
-  let r = cents(startBal);
+  if (pts.length) {
+    out += `<section class="card"><div class="card-head"><h2>Balance in ${MONTHS[+ym.slice(5) - 1]}</h2></div>
+      ${lineChart(pts.length === 1 ? [{ label: '', value: startBal, tip: tipMoney(startBal) }].concat(pts) : pts, days > 20 ? 7 : days > 10 ? 3 : 1)}</section>`;
+  }
   const after = {};
-  asc.forEach((t) => { r += effect(t, id); after[t.id] = r / 100; });
-  out += '<section class="card flush">' + (list.length ? list.map((t) => txRow(t, { accId: id, date: true, running: after[t.id] })).join('')
-    : `<div class="empty">No records in ${fmtMonth(ym)}.</div>`) + '</section>';
+  let r = cents(startBal);
+  list.slice().reverse().forEach((t) => { r += effect(t, id); after[t.id] = r / 100; });
+  out += list.length ? byDay(list).map(([d, l]) => `<section class="card flush"><div class="day-head"><b>${fmtDay(d)}</b></div>
+      ${l.map((t) => txRow(t, { accId: id, running: after[t.id] })).join('')}</section>`).join('')
+    : `<section class="card"><div class="empty">No records in ${fmtMonth(ym)}.</div></section>`;
   return out;
 }
 
@@ -243,34 +412,24 @@ function budgetScreen() {
   const ym = view.month;
   const cats = categories('expense');
   const withB = cats.filter((c) => c.budget > 0).map((c) => ({ c, b: budgetOf(c, ym) })).sort((x, y) => y.b.pct - x.b.pct);
-  const spentOther = byCategory(ym, 'expense');
-  let out = screenHead('Budget', { right: `<button class="icon-btn" data-a="go" data-to="categories" aria-label="Categories">${icon('list')}</button>` }) + monthSwitch(ym, 'month');
-
+  const spent = byCategory(ym, 'expense');
+  const all = budgetTotals(ym);
+  let out = screenHead('Budget', { back: 'home', right: eyeBtn() }) + monthSwitch(ym, 'month');
   if (withB.length) {
-    const total = withB.reduce((s, x) => s + cents(x.b.budget), 0) / 100;
-    const spent = withB.reduce((s, x) => s + cents(x.b.spent), 0) / 100;
-    const all = { spent, budget: total, left: Calc.round2(total - spent), pct: spent / total };
-    all.level = all.pct > 1 ? 'over' : all.pct >= 0.8 ? 'warn' : 'ok';
-    let perDay = '';
-    if (ym === thisMonth() && all.left > 0) {
-      const daysLeft = Shared.daysInMonth(+ym.slice(0, 4), +ym.slice(5)) - +today().slice(8) + 1;
-      perDay = `<p class="muted small" style="margin-top:10px">You can spend about <b>${money(all.left / daysLeft)}</b> a day for the next ${daysLeft} day${daysLeft > 1 ? 's' : ''}.</p>`;
-    }
-    out += `<section class="card"><div class="spread"><div><div class="muted small">Spent of budget</div><div style="font-size:24px;font-weight:750" class="num">${money(spent)}
-      <span class="muted" style="font-size:16px;font-weight:500">/ ${money(total)}</span></div></div>${budgetStatus(all)}</div>
-      <div style="margin-top:10px">${meter(all)}</div>${perDay}</section>`;
+    out += `<section class="card"><div class="spread"><span class="muted small">Spent of budget</span>${budgetStatus(all)}</div>
+      <div class="total num">${amt(all.spent)} <span class="of">/ ${amt(all.budget)}</span></div>${meter(all)}
+      ${perDayLeft(all, ym) ? `<p class="small muted">${perDayLeft(all, ym)}</p>` : ''}</section>`;
     out += '<section class="card flush">' + withB.map(({ c, b }) => `<button class="item" data-a="set-budget" data-id="${c.id}"><span class="bubble">${esc(c.icon)}</span>
-      <span class="grow"><div class="spread"><span class="title ellipsis">${esc(c.name)}</span>${budgetStatus(b)}</div>
-      <div class="meta num" style="margin:2px 0 6px">${money(b.spent)} of ${money(b.budget)}</div>${meter(b)}</span></button>`).join('') + '</section>';
+      <span class="grow"><span class="spread"><span class="title ellipsis">${esc(c.name)}</span>${budgetStatus(b)}</span>
+      <span class="meta ellipsis">${amt(b.spent)} of ${amt(b.budget)}</span>${meter(b)}</span></button>`).join('') + '</section>';
   } else {
-    out += `<section class="card"><div class="empty"><span class="e">🎯</span>Set a monthly budget for a category,<br>and see how much is left as you spend.</div></section>`;
+    out += `<section class="card"><div class="empty"><span class="e">🎯</span>Give a category a monthly budget<br>and see how much is left as you spend.</div></section>`;
   }
-
   const rest = cats.filter((c) => !(c.budget > 0));
   if (rest.length) {
     out += `<section class="card flush"><div class="card-head"><h2>No budget yet</h2></div>` + rest.map((c) => `<button class="item" data-a="set-budget" data-id="${c.id}">
-      <span class="bubble">${esc(c.icon)}</span><span class="grow"><div class="title ellipsis">${esc(c.name)}</div>
-      ${spentOther[c.id] ? `<div class="meta num">Spent ${money(spentOther[c.id])}</div>` : ''}</span><span class="link">Set</span></button>`).join('') + '</section>';
+      <span class="bubble">${esc(c.icon)}</span><span class="grow"><span class="title ellipsis">${esc(c.name)}</span>
+      ${spent[c.id] ? `<span class="meta ellipsis">Spent ${amt(spent[c.id])}</span>` : ''}</span><span class="link">Set</span></button>`).join('') + '</section>';
   }
   return out;
 }
@@ -278,6 +437,7 @@ function budgetScreen() {
 // ============================== bills ==============================
 function pushBanner() {
   const st = pushState();
+  if (CFG.demo) return '<div class="banner"><p>🔔 Notifications work in the real app, not in this preview.</p></div>';
   if (st === 'on') {
     return `<div class="banner"><div class="spread"><p>🔔 Notifications are on</p><button class="btn sm" data-a="push-test">Send a test</button></div></div>`;
   }
@@ -300,10 +460,10 @@ function billsScreen() {
     (st.key === 'overdue' ? groups.overdue : st.key === 'later' && st.days > 7 ? groups.later : groups.soon).push(r);
   });
   const done = all.filter((r) => !r.active);
-  let out = screenHead('Bills', { right: `<button class="icon-btn" data-a="bill-new" aria-label="Add a bill">${icon('plus')}</button>` }) + pushBanner();
+  let out = screenHead('Bills', { back: 'home', right: `<button class="icon-btn" data-a="bill-new" aria-label="Add a bill">${icon('plus')}</button>` }) + pushBanner();
   if (!all.length) {
-    return out + `<section class="card stack" style="text-align:center"><span style="font-size:44px">🗓️</span><h2>Never miss a payment</h2>
-      <p class="muted">Add rent, phone, loans, insurance… choose when it’s due and when to remind you.</p>
+    return out + `<section class="card stack center-text"><span class="hero-emoji">🗓️</span><h2>Never miss a payment</h2>
+      <p class="muted">Add rent, TNB, phone, loans or insurance. Choose when it’s due and when to remind you.</p>
       <button class="btn primary block" data-a="bill-new">＋ Add a bill</button></section>`;
   }
   const sec = (title, list) => (list.length ? `<section class="card flush"><div class="card-head"><h2>${title}</h2></div>${list.map(billRow).join('')}</section>` : '');
@@ -313,11 +473,26 @@ function billsScreen() {
     out += `<button class="link" data-a="toggle-done">${view.showDone ? 'Hide' : 'Show'} finished one-time bills (${done.length})</button>`;
     if (view.showDone) {
       out += '<section class="card flush">' + done.map((r) => `<button class="item" data-a="bill-edit" data-id="${r.id}"><span class="bubble">✅</span>
-        <span class="grow"><div class="title ellipsis">${esc(r.title)}</div><div class="meta">Paid ${r.lastPaid ? fmtDate(r.lastPaid) : ''}</div></span>
-        <span class="amt num muted">${r.amount ? money(r.amount) : ''}</span></button>`).join('') + '</section>';
+        <span class="grow"><span class="title ellipsis">${esc(r.title)}</span><span class="meta ellipsis">Paid ${r.lastPaid ? fmtDate(r.lastPaid) : ''}</span></span>
+        <span class="amt num muted">${r.amount ? amt(r.amount) : ''}</span></button>`).join('') + '</section>';
     }
   }
   return out;
+}
+
+// ============================== categories ==============================
+function categoriesScreen() {
+  const list = live('categories').filter((c) => c.kind === view.catKind).sort((a, b) => (a.archived - b.archived) || (a.order || 0) - (b.order || 0));
+  return screenHead('Categories', { back: 'settings', right: `<button class="btn sm ${view.catSort ? 'primary' : ''}" data-a="cat-sort">${view.catSort ? 'Done' : 'Sort'}</button>` }) +
+    `<div class="seg type"><button class="${view.catKind === 'expense' ? 'on' : ''}" data-a="cat-kind" data-v="expense">Spending</button>
+      <button class="${view.catKind === 'income' ? 'on' : ''}" data-a="cat-kind" data-v="income">Income</button></div>` +
+    (view.catSort ? '<p class="small muted center-text">Use the arrows to move categories. The order is used everywhere.</p>' : '') +
+    `<section class="card"><div class="cat-tiles">${list.map((c, i) => `<div class="cat-tile${c.archived ? ' off' : ''}">
+      <button class="cat" data-a="${view.catSort ? 'noop' : 'cat-edit'}" data-id="${c.id}"><span class="e">${esc(c.icon)}</span><span class="cname">${esc(c.name)}</span>
+      ${c.kind === 'expense' && c.budget > 0 && !view.catSort ? `<span class="cbud num">${amt(c.budget)}</span>` : ''}</button>
+      ${view.catSort ? `<span class="sort-btns"><button data-a="cat-move" data-id="${c.id}" data-d="-1" aria-label="Move earlier" ${i === 0 ? 'disabled' : ''}>‹</button>
+        <button data-a="cat-move" data-id="${c.id}" data-d="1" aria-label="Move later" ${i === list.length - 1 ? 'disabled' : ''}>›</button></span>` : ''}</div>`).join('')}
+      ${view.catSort ? '' : '<button class="cat add" data-a="cat-new"><span class="e">＋</span><span class="cname">New</span></button>'}</div></section>`;
 }
 
 // ============================== settings ==============================
@@ -334,48 +509,31 @@ function settingsScreen() {
   const waiting = unsentCount();
   const ps = pushState();
   const link = (to, emoji, title, meta) => `<button class="item" data-a="go" data-to="${to}"><span class="bubble">${emoji}</span>
-    <span class="grow"><div class="title">${title}</div>${meta ? `<div class="meta">${meta}</div>` : ''}</span>${icon('next')}</button>`;
+    <span class="grow"><span class="title ellipsis">${title}</span>${meta ? `<span class="meta ellipsis">${meta}</span>` : ''}</span>${icon('next')}</button>`;
+  const n = accounts(true).length;
   return screenHead('Settings', { back: 'home' }) +
     `<section class="card"><label class="field"><span>Your name</span><input class="input" maxlength="30" value="${esc(setting('name'))}" data-change="set-name" autocomplete="given-name"></label></section>
-    <section class="card flush">${link('accounts', '🏦', 'Bank accounts', accounts().length + ' account' + (accounts().length === 1 ? '' : 's'))}
-    ${link('categories', '🏷️', 'Categories & budgets', '')}${link('bills', '🔔', 'Bills & notifications', ps === 'on' ? 'Notifications on' : 'Notifications off')}</section>
+    <section class="card flush">${link('wallet', '💳', 'Accounts', n + ' account' + (n === 1 ? '' : 's'))}
+    ${link('categories', '🏷️', 'Categories', 'Add, rename, sort')}${link('budget', '🎯', 'Budget', 'Monthly budget for each category')}
+    ${link('bills', '🔔', 'Bills & notifications', CFG.demo ? 'Preview' : ps === 'on' ? 'Notifications on' : 'Notifications off')}</section>
     <section class="card flush">
-      <div class="item"><span class="bubble">🔒</span><span class="grow"><div class="title">App lock</div><div class="meta">Ask for a 4-digit PIN when opening the app</div></span>
+      <div class="item"><span class="bubble">🙈</span><span class="grow"><span class="title">Hide amounts</span><span class="meta">Show •••• instead of money, e.g. in public</span></span>
+        <label class="switch"><input type="checkbox" data-change="privacy-toggle" ${M.hideAmounts ? 'checked' : ''} aria-label="Hide amounts"><i></i></label></div>
+      <div class="item"><span class="bubble">🔒</span><span class="grow"><span class="title">App lock</span><span class="meta">Ask for a 4-digit PIN when opening the app</span></span>
         <label class="switch"><input type="checkbox" data-change="pin-toggle" ${M.pinHash ? 'checked' : ''} aria-label="App lock"><i></i></label></div>
-      <div class="item"><span class="bubble">☁️</span><span class="grow"><div class="title">Backup to Google Sheet</div>
-        <div class="meta">${syncState.error && waiting ? esc(syncState.error) : waiting ? waiting + ' change(s) waiting to upload' : 'Backed up ' + ago(M.lastSync)}</div></span>
-        <button class="btn sm" data-a="sync-now">${icon('sync')}</button></div>
-      <button class="item" data-a="export"><span class="bubble">📤</span><span class="grow"><div class="title">Export to a spreadsheet file</div><div class="meta">All records as CSV</div></span>${icon('download')}</button>
+      <div class="item"><span class="bubble">☁️</span><span class="grow"><span class="title">Cloud backup</span>
+        <span class="meta">${CFG.demo ? 'Off in the preview' : syncState.error && waiting ? esc(syncState.error) : waiting ? waiting + ' change(s) waiting to upload' : 'Backed up ' + ago(M.lastSync)}</span></span>
+        <button class="btn sm" data-a="sync-now" aria-label="Back up now">${icon('sync')}</button></div>
+      <button class="item" data-a="export"><span class="bubble">📤</span><span class="grow"><span class="title">Export to a spreadsheet file</span><span class="meta">All records as CSV</span></span>${icon('download')}</button>
     </section>
-    <section class="card flush"><button class="item" data-a="unpair"><span class="bubble">📵</span><span class="grow"><div class="title" style="color:var(--bad)">Unpair this phone</div>
-      <div class="meta">Removes the data from this phone. Your Google Sheet keeps everything.</div></span></button></section>
-    <p class="muted tiny" style="text-align:center">YH Tracker · version ${esc(CFG.build || 'dev')}</p>`;
-}
-
-function accountsScreen() {
-  const bal = balances();
-  const all = accounts(true);
-  return screenHead('Bank accounts', { back: 'settings', right: `<button class="icon-btn" data-a="acc-new" aria-label="Add account">${icon('plus')}</button>` }) +
-    '<section class="card flush">' + (all.length ? all.map((a, i) => `<div class="item"><span class="bubble">${accIcon(a)}</span>
-      <button class="grow" style="border:0;background:none;text-align:left;padding:0" data-a="acc-edit" data-id="${a.id}"><div class="title ellipsis">${esc(a.name)}${a.archived ? ' <span class="muted small">(hidden)</span>' : ''}</div>
-      <div class="meta num">${money(bal[a.id])}</div></button>
-      <button class="icon-btn plain" data-a="acc-move" data-id="${a.id}" data-d="-1" aria-label="Move up" ${i === 0 ? 'disabled style="opacity:.25"' : ''}><svg class="i" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg></button></div>`).join('')
-      : '<div class="empty">No accounts yet.</div>') + '</section>' +
-    '<p class="muted small" style="text-align:center">Tap an account to rename it, change its starting balance, or hide it.</p>';
-}
-
-function categoriesScreen() {
-  const list = live('categories').filter((c) => c.kind === view.catKind).sort((a, b) => (a.archived - b.archived) || (a.order || 0) - (b.order || 0));
-  return screenHead('Categories', { back: 'settings', right: `<button class="icon-btn" data-a="cat-new" aria-label="Add category">${icon('plus')}</button>` }) +
-    `<div class="seg"><button class="${view.catKind === 'expense' ? 'on' : ''}" data-a="cat-kind" data-v="expense">Spending</button>
-      <button class="${view.catKind === 'income' ? 'on' : ''}" data-a="cat-kind" data-v="income">Income</button></div>` +
-    '<section class="card flush">' + list.map((c) => `<button class="item" data-a="cat-edit" data-id="${c.id}"><span class="bubble">${esc(c.icon)}</span>
-      <span class="grow"><div class="title ellipsis">${esc(c.name)}${c.archived ? ' <span class="muted small">(hidden)</span>' : ''}</div>
-      ${c.kind === 'expense' ? `<div class="meta num">${c.budget > 0 ? 'Budget ' + money(c.budget) + ' a month' : 'No budget'}</div>` : ''}</span>${icon('next')}</button>`).join('') + '</section>';
+    <section class="card flush"><button class="item" data-a="unpair"><span class="bubble">📵</span><span class="grow"><span class="title danger-text">${CFG.demo ? 'Clear the preview data' : 'Unpair this phone'}</span>
+      <span class="meta">${CFG.demo ? 'Removes the sample data from this phone.' : 'Removes the data from this phone. Our database keeps everything.'}</span></span></button></section>
+    <p class="muted tiny center-text">YH Tracker v2 · ${esc(CFG.build || 'dev')}${CFG.demo ? ' · preview' : ''}</p>`;
 }
 
 const SCREENS = {
-  home: homeScreen, records: recordsScreen, reports: reportsScreen, account: accountScreen, budget: budgetScreen,
-  bills: billsScreen, settings: settingsScreen, accounts: accountsScreen, categories: categoriesScreen,
+  home: homeScreen, records: recordsScreen, stats: statsScreen, wallet: walletScreen, account: accountScreen, budget: budgetScreen,
+  bills: billsScreen, settings: settingsScreen, categories: categoriesScreen,
 };
-const TAB_OF = { home: 'home', records: 'home', settings: 'home', accounts: 'home', categories: 'budget', reports: 'reports', account: 'reports', budget: 'budget', bills: 'bills' };
+const ROUTE_ALIAS = { reports: 'stats', accounts: 'wallet' }; // v1 links
+const TAB_OF = { home: 'home', settings: 'home', budget: 'home', bills: 'home', categories: 'home', records: 'records', stats: 'stats', wallet: 'wallet', account: 'wallet' };

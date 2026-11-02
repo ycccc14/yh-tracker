@@ -25,7 +25,7 @@ function render() {
     if (el) { el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { /* not a text field */ } }
   }
   $$('#tabs .tab').forEach((t) => t.classList.toggle('on', t.dataset.to === TAB_OF[view.route]));
-  $('.tab-dot').hidden = !billsAttention().some((x) => x.days <= 0);
+  $('.tab-dot').hidden = !billsAttention().some((x) => x.days <= 0); // on Home, where the bills card is
   updateBadge();
 }
 
@@ -37,7 +37,8 @@ onChange = () => {
 };
 
 function readHash() {
-  const [r, a] = decodeURIComponent(location.hash.slice(1)).split('/');
+  let [r, a] = decodeURIComponent(location.hash.slice(1)).split('/');
+  r = ROUTE_ALIAS[r] || r;
   view.route = SCREENS[r] ? r : 'home';
   view.arg = a || '';
 }
@@ -59,12 +60,30 @@ actions.month = (el) => {
   const next = shiftMonth(view.month, Number(el.dataset.d));
   if (next > thisMonth()) return;
   view.month = next;
+  view.year = +next.slice(0, 4);
+  render();
+};
+actions.year = (el) => {
+  const y = view.year + Number(el.dataset.d);
+  if (y > +thisMonth().slice(0, 4)) return;
+  view.year = y;
+  view.month = y === +thisMonth().slice(0, 4) ? thisMonth() : y + '-12';
   render();
 };
 actions['cat-records'] = (el) => {
-  Object.assign(view, { recType: 'all', recAcc: '', recCat: el.dataset.id, recQuery: '' });
+  Object.assign(view, { recType: 'all', recAcc: '', recCat: el.dataset.id, recQuery: '', recMode: 'list' });
   go('records');
 };
+actions['rec-mode'] = (el) => { view.recMode = el.dataset.v; render(); };
+actions['cal-day'] = (el) => { view.recDay = el.dataset.v; render(); };
+actions['stat-period'] = (el) => { view.statPeriod = el.dataset.v; render(); };
+actions['stat-kind'] = (el) => { view.statKind = el.dataset.v; render(); };
+actions['toggle-hidden'] = () => { view.showHidden = !view.showHidden; render(); };
+actions['cat-sort'] = () => { view.catSort = !view.catSort; render(); };
+actions.noop = () => {};
+const setPrivacy = (on) => { M.hideAmounts = on; persist(); render(); toast(on ? 'Amounts hidden 🙈' : 'Amounts shown'); };
+actions.privacy = () => setPrivacy(!M.hideAmounts);
+actions['privacy-toggle'] = (el) => setPrivacy(el.checked);
 actions['rec-type'] = (el) => { view.recType = el.dataset.v; render(); };
 actions['rec-acc'] = (el) => { view.recAcc = view.recAcc === el.dataset.v ? '' : el.dataset.v; render(); };
 actions['rec-cat'] = (el) => { view.recCat = el.dataset.v; render(); };
@@ -105,8 +124,9 @@ actions['push-test'] = async (el) => {
 };
 actions.unpair = async () => {
   const waiting = unsentCount();
-  const ok = await confirmSheet('Unpair this phone?', (waiting ? `${waiting} change(s) haven’t uploaded yet and will be lost. ` : '') +
-    'Your Google Sheet keeps everything else. You’ll need a new pairing code to use the app again.', 'Unpair', true);
+  const ok = CFG.demo ? await confirmSheet('Clear the preview data?', 'The sample data is removed. Open the preview again for a fresh copy.', 'Clear', true)
+    : await confirmSheet('Unpair this phone?', (waiting ? `${waiting} change(s) haven’t uploaded yet and will be lost. ` : '') +
+      'Our Database keeps everything else. You’ll need a new pairing code to use the app again.', 'Unpair', true);
   if (!ok) return;
   try { await api('unpair'); } catch (e) { /* offline: the token is forgotten anyway */ }
   await wipeLocal();
@@ -156,9 +176,23 @@ function showInstall() {
       <li><span>Tap the <b>Share</b> button <span style="display:inline-block;vertical-align:-5px;color:var(--series-income)">${icon('share')}</span> at the bottom of Safari.</span></li>
       <li><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>
       <li><span>Tap <b>Add</b>, then open <b>YH Tracker</b> from your Home Screen.</span></li></ol></section>
-    <p class="muted small">Not on an iPhone? <button class="link" data-a="skip-install">Continue in the browser</button></p>`);
+    <p class="muted small">Prefer not to install? <button class="link" data-a="skip-install">Continue in the browser</button></p>`);
 }
-actions['skip-install'] = () => showPair();
+actions['skip-install'] = () => (CFG.demo ? startDemo() : showPair());
+
+// Preview build: no pairing; fill the phone with sample data and go.
+function startDemo() {
+  seedDemo();
+  M.token = 'demo';
+  persist(true);
+  start();
+}
+actions['demo-reset'] = async () => {
+  if (!(await confirmSheet('Start the preview over?', 'Your changes to the sample data are removed.', 'Start over', true))) return;
+  await wipeLocal();
+  startDemo();
+  go('home');
+};
 
 function showPair(note) {
   cover(`${appIcon}<div><h1>Welcome 👋</h1><p class="muted" style="margin-top:6px">Type the pairing code you were sent. You only do this once.</p></div>
@@ -169,7 +203,7 @@ function showPair(note) {
       <button class="btn primary block" data-a="pair-go">🔑 Pair this phone</button>
       <p class="small" id="pair-err" style="color:var(--bad);min-height:18px"></p>
     </section>
-    <p class="muted small">🔒 Your data stays on this phone and in a private Google Sheet. Only paired phones can reach it.</p>`);
+    <p class="muted small">🔒 Your data stays on this phone and in a private database. Only paired phones can reach it.</p>`);
   const code = $('#pair-code');
   code.addEventListener('input', () => {
     const raw = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -262,7 +296,7 @@ function lockApp() {
   });
 }
 actions['pin-forgot'] = async () => {
-  if (await confirmSheet('Forgot your PIN?', 'This unpairs the phone and removes the data from it. Your Google Sheet keeps everything; ask for a new pairing code to get it back.', 'Unpair phone', true)) {
+  if (await confirmSheet('Forgot your PIN?', 'This unpairs the phone and removes the data from it. We keep everything; ask for a new pairing code to get it back.', 'Unpair phone', true)) {
     try { await api('unpair'); } catch (e) { /* offline */ }
     await wipeLocal();
     location.replace(location.pathname);
@@ -313,9 +347,11 @@ function start() {
   render();
   if (started) return;
   started = true;
+  autoRecordBills();
   sync().then(() => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz && setting('tz') !== tz) put('settings', { id: 'tz', value: tz }); // reminders go out in her time zone
+    autoRecordBills(); // bills set to record automatically (also catches up on missed ones)
   });
   refreshPush();
   setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 5 * 60 * 1000);
@@ -337,6 +373,7 @@ document.addEventListener('visibilitychange', () => {
   if (!M.token) return;
   if (M.pinHash && Date.now() - (M.hiddenAt || 0) > 60000) lockApp();
   if (Date.now() - M.lastSync > 30000) sync();
+  autoRecordBills();
   render(); // "today" may have changed
 });
 window.addEventListener('online', () => { syncState.online = true; sync(); });
@@ -363,7 +400,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (!M.token) {
-    if (isIOS() && !isStandalone()) showInstall(); else showPair();
+    if (isIOS() && !isStandalone()) showInstall(); else if (CFG.demo) startDemo(); else showPair();
     return;
   }
   if (M.pinHash) await lockApp();

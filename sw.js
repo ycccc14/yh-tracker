@@ -1,10 +1,10 @@
 // Keeps the app's files on the phone (opens instantly, works offline) and shows bill notifications.
 // Pushes from the server are empty: the text comes from the bills stored on this phone, so it is
 // always current (a bill paid a minute ago isn't mentioned) and nothing personal travels via Apple.
-importScripts('shared.js?v=da5a236b37');
+importScripts('config.js?v=726c907cca', 'shared.js?v=726c907cca');
 
-const CACHE = 'yh-da5a236b37';
-const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=da5a236b37", "shared.js?v=da5a236b37", "app.css?v=da5a236b37", "js/calc.js?v=da5a236b37", "js/core.js?v=da5a236b37", "js/editors.js?v=da5a236b37", "js/main.js?v=da5a236b37", "js/screens.js?v=da5a236b37", "js/ui.js?v=da5a236b37", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
+const CACHE = 'yh-726c907cca';
+const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=726c907cca", "shared.js?v=726c907cca", "app.css?v=726c907cca", "js/calc.js?v=726c907cca", "js/core.js?v=726c907cca", "js/demo.js?v=726c907cca", "js/editors.js?v=726c907cca", "js/main.js?v=726c907cca", "js/screens.js?v=726c907cca", "js/ui.js?v=726c907cca", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (e) => {
 
 function idbGet(key) {
   return new Promise((resolve) => {
-    const req = indexedDB.open('yh-tracker', 1);
+    const req = indexedDB.open((self.YH_CONFIG || {}).db || 'yh-tracker', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('kv');
     req.onerror = () => resolve(null);
     req.onsuccess = () => {

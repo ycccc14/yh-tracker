@@ -1,7 +1,7 @@
 // Data on the phone (IndexedDB), the numbers worked out from it, and syncing with the Google Sheet.
 'use strict';
 
-const CFG = window.YH_CONFIG || {};
+const CFG = self.YH_CONFIG || {};
 const TABLES = ['accounts', 'categories', 'transactions', 'reminders', 'settings'];
 
 // ============================== small helpers ==============================
@@ -43,6 +43,10 @@ const fmtMonth = (ym) => MONTHS_LONG[+ym.slice(5) - 1] + ' ' + ym.slice(0, 4);
 const fmtMonthShort = (ym) => MONTHS[+ym.slice(5) - 1];
 
 const numFmt = new Intl.NumberFormat('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Amount for screens: dots instead of digits while the privacy eye is on.
+function amt(x, opts) {
+  return M.hideAmounts ? (setting('currency') || 'RM') + ' ••••' : money(x, opts);
+}
 function money(x, opts) {
   opts = opts || {};
   const v = Number(x) || 0;
@@ -64,7 +68,7 @@ const DB = {
   open() {
     if (this.db) return Promise.resolve(this.db);
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open('yh-tracker', 1);
+      const req = indexedDB.open(CFG.db || 'yh-tracker', 1);
       req.onupgradeneeded = () => req.result.createObjectStore('kv');
       req.onsuccess = () => { this.db = req.result; resolve(this.db); };
       req.onerror = () => reject(req.error);
@@ -203,9 +207,17 @@ function balances(upto) {
     return out;
   });
 }
+// Net worth: every account that counts in the total (debts are negative balances).
 function totalBalance(upto) {
   const b = balances(upto);
-  return accounts().reduce((s, a) => s + cents(b[a.id]), 0) / 100;
+  return accounts(true).filter((a) => !a.excluded).reduce((s, a) => s + cents(b[a.id]), 0) / 100;
+}
+function netWorth() {
+  const b = balances();
+  let assets = 0;
+  let debts = 0;
+  accounts(true).filter((a) => !a.excluded).forEach((a) => { const v = cents(b[a.id]); if (v >= 0) assets += v; else debts -= v; });
+  return { assets: assets / 100, debts: debts / 100, net: (assets - debts) / 100 };
 }
 
 // Income and spending in a month (transfers and balance fixes aren't income or spending).
@@ -225,6 +237,21 @@ function monthTotals(ym, accId) {
       if (t.type === 'expense') exp += cents(t.amount);
     });
     return { income: inc / 100, expense: exp / 100, net: (inc - exp) / 100, moneyIn: moveIn / 100, moneyOut: moveOut / 100 };
+  });
+}
+
+// Spending in a month up to a day of the month (for "vs the same time last month").
+function spentUpTo(ym, day) {
+  return txInMonth(ym).reduce((s, t) => s + (t.type === 'expense' && +t.date.slice(8) <= day ? cents(t.amount) : 0), 0) / 100;
+}
+
+// {categoryId: amount} for one kind in a period: 'YYYY-MM' or 'YYYY'.
+function byCategoryIn(period, kind) {
+  return cached('bcp' + period + kind, () => {
+    const out = {};
+    txSorted().forEach((t) => { if (t.type === kind && t.date.indexOf(period) === 0) out[t.categoryId] = (out[t.categoryId] || 0) + cents(t.amount); });
+    Object.keys(out).forEach((k) => { out[k] /= 100; });
+    return out;
   });
 }
 
@@ -259,6 +286,7 @@ let syncState = { online: navigator.onLine !== false, error: '' };
 let onUnpaired = () => {};
 
 async function api(fn, arg) {
+  if (CFG.demo) return demoApi(fn);
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = setTimeout(() => ctrl && ctrl.abort(), 45000);
   let res;
@@ -277,6 +305,13 @@ async function api(fn, arg) {
     throw new Error(body.error || 'Something went wrong.');
   }
   return body.result;
+}
+
+// Preview builds run on sample data kept on the phone: nothing is sent anywhere.
+function demoApi(fn) {
+  if (fn === 'sync') { TABLES.forEach((t) => { M.dirty[t] = {}; }); return { cursor: 1, changes: {} }; }
+  if (fn === 'unpair') return {};
+  throw new Error('Not available in the demo. It works in the real app.');
 }
 
 const unsentCount = () => TABLES.reduce((n, t) => n + Object.keys(M.dirty[t]).length, 0);
@@ -328,6 +363,28 @@ async function sync() {
   try { await syncing; } finally { syncing = null; }
   if (syncAgain) { syncAgain = false; return sync(); }
   emit();
+}
+
+// Bills set to "record automatically": once the due date arrives, record the payment and move
+// the bill on (catching up on any missed ones). Ids are fixed per bill and due date, so two
+// phones doing this at once make the same record, not two.
+function autoRecordBills() {
+  const t = today();
+  let made = 0;
+  activeBills().forEach((r0) => {
+    let r = r0;
+    for (let i = 0; i < 60 && r.auto && r.active && r.amount > 0 && acc(r.accountId) && r.due <= t; i++) {
+      const id = 'auto-' + r.id + '-' + r.due;
+      if (!S.transactions[id]) {
+        const fallback = categories('expense').find((c) => /^Bills/.test(c.name)) || {};
+        put('transactions', { id, date: r.due, type: 'expense', amount: r.amount, accountId: r.accountId, toAccountId: '', categoryId: r.categoryId || fallback.id || '', note: r.title });
+        made++;
+      }
+      const next = Shared.nextDue(r);
+      r = put('reminders', Object.assign({}, r, { lastPaid: r.due, due: next || r.due, active: !!next }));
+    }
+  });
+  return made;
 }
 
 // ============================== notifications ==============================
