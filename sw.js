@@ -1,10 +1,10 @@
 // Keeps the app's files on the phone (opens instantly, works offline) and shows bill notifications.
 // Pushes from the server are empty: the text comes from the bills stored on this phone, so it is
 // always current (a bill paid a minute ago isn't mentioned) and nothing personal travels via Apple.
-importScripts('config.js?v=726c907cca', 'shared.js?v=726c907cca');
+importScripts('config.js?v=37237c76e3', 'shared.js?v=37237c76e3');
 
-const CACHE = 'yh-726c907cca';
-const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=726c907cca", "shared.js?v=726c907cca", "app.css?v=726c907cca", "js/calc.js?v=726c907cca", "js/core.js?v=726c907cca", "js/demo.js?v=726c907cca", "js/editors.js?v=726c907cca", "js/main.js?v=726c907cca", "js/screens.js?v=726c907cca", "js/ui.js?v=726c907cca", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
+const CACHE = 'yh-37237c76e3';
+const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=37237c76e3", "shared.js?v=37237c76e3", "app.css?v=37237c76e3", "js/account.js?v=37237c76e3", "js/calc.js?v=37237c76e3", "js/core.js?v=37237c76e3", "js/crypto.js?v=37237c76e3", "js/demo.js?v=37237c76e3", "js/editors.js?v=37237c76e3", "js/main.js?v=37237c76e3", "js/screens.js?v=37237c76e3", "js/ui.js?v=37237c76e3", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -51,11 +51,25 @@ function when(days) {
   return 'due ' + Shared.relDays(days);
 }
 
+// Is the owner asking for a copy of the data? (Pushes are empty, so ask the server.)
+async function hasRequest(meta) {
+  const cfg = self.YH_CONFIG || {};
+  if (!meta || !meta.token || !cfg.api || cfg.demo) return false;
+  try {
+    const res = await fetch(cfg.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: meta.token, fn: 'inbox', args: [{}] }) });
+    const body = await res.json();
+    return !!(body.ok && body.result.requests.length);
+  } catch (e) {
+    return false;
+  }
+}
+
 async function reminderText() {
   const [state, meta] = await Promise.all([idbGet('state'), idbGet('meta')]);
   if (meta && meta.testPushAt && Date.now() - meta.testPushAt < 5 * 60 * 1000) {
     return { title: 'Notifications work ✅', body: 'You’ll get a reminder like this before your bills are due.' };
   }
+  if (await hasRequest(meta)) return { title: '📨 YC asks for a copy of your data', body: 'Tap to approve or decline.', tag: 'request' };
   const d = new Date();
   const today = Shared.ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
   const rems = state && state.reminders ? Object.values(state.reminders) : [];
@@ -76,7 +90,7 @@ async function reminderText() {
 self.addEventListener('push', (e) => {
   e.waitUntil(reminderText().then((m) => {
     const shown = self.registration.showNotification(m.title, {
-      body: m.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'bills', renotify: true, data: { go: 'bills' },
+      body: m.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: m.tag || 'bills', renotify: true, data: { go: m.tag === 'request' ? 'home' : 'bills' },
     });
     if (self.navigator.setAppBadge && m.count) self.navigator.setAppBadge(m.count).catch(() => {});
     return shown;

@@ -25,8 +25,9 @@ function render() {
     if (el) { el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { /* not a text field */ } }
   }
   $$('#tabs .tab').forEach((t) => t.classList.toggle('on', t.dataset.to === TAB_OF[view.route]));
-  $('.tab-dot').hidden = !billsAttention().some((x) => x.days <= 0); // on Home, where the bills card is
+  $('.tab-dot').hidden = !billsAttention().some((x) => x.days <= 0) && !pendingRequests().length; // on Home: bills due, or a data request
   updateBadge();
+  maybePromptRequest();
 }
 
 // Redraw after data changes, at most once per frame.
@@ -122,18 +123,6 @@ actions['push-test'] = async (el) => {
   }
   el.disabled = false;
 };
-actions.unpair = async () => {
-  const waiting = unsentCount();
-  const ok = CFG.demo ? await confirmSheet('Clear the preview data?', 'The sample data is removed. Open the preview again for a fresh copy.', 'Clear', true)
-    : await confirmSheet('Unpair this phone?', (waiting ? `${waiting} change(s) haven’t uploaded yet and will be lost. ` : '') +
-      'Our Database keeps everything else. You’ll need a new pairing code to use the app again.', 'Unpair', true);
-  if (!ok) return;
-  try { await api('unpair'); } catch (e) { /* offline: the token is forgotten anyway */ }
-  await wipeLocal();
-  location.replace(location.pathname);
-  location.reload();
-};
-
 function csvCell(v, text) {
   v = String(v == null ? '' : v);
   if (text && /^[=+\-@]/.test(v)) v = "'" + v; // spreadsheets would treat it as a formula
@@ -178,9 +167,9 @@ function showInstall() {
       <li><span>Tap <b>Add</b>, then open <b>YH Tracker</b> from your Home Screen.</span></li></ol></section>
     <p class="muted small">Prefer not to install? <button class="link" data-a="skip-install">Continue in the browser</button></p>`);
 }
-actions['skip-install'] = () => (CFG.demo ? startDemo() : showPair());
+actions['skip-install'] = () => (CFG.demo ? startDemo() : showWelcome());
 
-// Preview build: no pairing; fill the phone with sample data and go.
+// Preview build: no sign-in; fill the phone with sample data and go.
 function startDemo() {
   seedDemo();
   M.token = 'demo';
@@ -192,51 +181,6 @@ actions['demo-reset'] = async () => {
   await wipeLocal();
   startDemo();
   go('home');
-};
-
-function showPair(note) {
-  cover(`${appIcon}<div><h1>Welcome 👋</h1><p class="muted" style="margin-top:6px">Type the pairing code you were sent. You only do this once.</p></div>
-    ${note ? `<div class="banner warn"><p>${esc(note)}</p></div>` : ''}
-    <section class="card stack" style="text-align:left">
-      <label class="field"><span>Pairing code</span><input class="input code-input" id="pair-code" maxlength="9" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false"></label>
-      <label class="field"><span>Name this phone</span><input class="input" id="pair-name" maxlength="40" value="YH’s iPhone"></label>
-      <button class="btn primary block" data-a="pair-go">🔑 Pair this phone</button>
-      <p class="small" id="pair-err" style="color:var(--bad);min-height:18px"></p>
-    </section>
-    <p class="muted small">🔒 Your data stays on this phone and in a private database. Only paired phones can reach it.</p>`);
-  const code = $('#pair-code');
-  code.addEventListener('input', () => {
-    const raw = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-    code.value = raw.length > 4 ? raw.slice(0, 4) + '-' + raw.slice(4) : raw;
-  });
-  const m = location.hash.match(/pair=([A-Za-z0-9-]+)/);
-  if (m) code.value = m[1].toUpperCase();
-}
-actions['pair-go'] = async (el) => {
-  const err = $('#pair-err');
-  err.textContent = '';
-  const code = $('#pair-code').value;
-  if (code.replace(/[^A-Za-z0-9]/g, '').length !== 8) { err.textContent = 'The code has 8 letters and numbers.'; return; }
-  el.disabled = true;
-  el.textContent = 'Pairing…';
-  try {
-    const r = await api('pair', { code, device: $('#pair-name').value || 'iPhone' });
-    M.token = r.token;
-    await persist(true);
-    cover(`${appIcon}<h1>Paired ✓</h1><p class="muted">Getting your data…</p>`);
-    await sync();
-    if (syncState.error) throw new Error(syncState.error);
-    history.replaceState(null, '', location.pathname + '#home');
-    start();
-  } catch (e) {
-    if (!M.token) {
-      el.disabled = false;
-      el.textContent = '🔑 Pair this phone';
-      err.textContent = e.message;
-    } else {
-      start(); // paired; the first download will retry by itself
-    }
-  }
 };
 
 // ============================== app lock ==============================
@@ -296,8 +240,8 @@ function lockApp() {
   });
 }
 actions['pin-forgot'] = async () => {
-  if (await confirmSheet('Forgot your PIN?', 'This unpairs the phone and removes the data from it. We keep everything; ask for a new pairing code to get it back.', 'Unpair phone', true)) {
-    try { await api('unpair'); } catch (e) { /* offline */ }
+  if (await confirmSheet('Forgot your PIN?', 'You’ll be signed out on this phone. Your data is safe online: sign in again with your password to get it back.', 'Sign out', true)) {
+    try { await api('signOut'); } catch (e) { /* offline: the session is forgotten anyway */ }
     await wipeLocal();
     location.replace(location.pathname);
     location.reload();
@@ -357,10 +301,10 @@ function start() {
   setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 5 * 60 * 1000);
 }
 
-onUnpaired = async (msg) => {
+onSignedOut = async (msg) => {
   await wipeLocal();
   closeAllSheets();
-  showPair(msg || 'This phone was unpaired. Ask for a new pairing code.');
+  showWelcome(msg || 'You were signed out. Please sign in again.');
 };
 
 document.addEventListener('visibilitychange', () => {
@@ -399,8 +343,13 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     return;
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  if (M.token && !M.dk && !CFG.demo) { // signed in with the old pairing (before logins): start fresh
+    await wipeLocal();
+    showWelcome('YH Tracker now has its own login, and your data is locked with your password. Sign in, or create your account with an invite code.');
+    return;
+  }
   if (!M.token) {
-    if (isIOS() && !isStandalone()) showInstall(); else if (CFG.demo) startDemo(); else showPair();
+    if (isIOS() && !isStandalone()) showInstall(); else if (CFG.demo) startDemo(); else showWelcome();
     return;
   }
   if (M.pinHash) await lockApp();

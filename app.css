@@ -283,6 +283,7 @@ input.date-chip { -webkit-appearance: none; appearance: none; min-width: 0; }
 .badge.later { background: var(--soft); color: var(--muted); }
 .banner { border-radius: 18px; padding: 14px; background: var(--brand-soft); display: grid; gap: 10px; }
 .banner.warn { background: var(--warn-soft); }
+button.banner { border: 0; width: 100%; text-align: left; color: var(--ink); }
 .banner p { font-size: 14px; color: var(--ink-2); }
 .banner .link { padding: 0; font-size: 14px; }
 

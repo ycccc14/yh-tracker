@@ -168,6 +168,7 @@ function homeScreen() {
     right: eyeBtn() + `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
 
   if (CFG.demo) out += `<div class="banner"><p>🧪 <b>Preview with sample data.</b> Nothing here is saved to the cloud. <button class="link" data-a="demo-reset">Start over</button></p></div>`;
+  if (pendingRequests().length) out += `<button class="banner tap-card" data-a="request-review"><p>📨 <b>YC asks for a copy of your data.</b> Tap to approve or decline.</p></button>`;
   if (!syncState.online && unsentCount()) out += `<div class="banner warn"><p>📡 You’re offline. ${unsentCount()} change(s) are saved on this phone and will upload when you’re back online.</p></div>`;
 
   let trend = '';
@@ -521,14 +522,26 @@ function settingsScreen() {
         <label class="switch"><input type="checkbox" data-change="privacy-toggle" ${M.hideAmounts ? 'checked' : ''} aria-label="Hide amounts"><i></i></label></div>
       <div class="item"><span class="bubble">🔒</span><span class="grow"><span class="title">App lock</span><span class="meta">Ask for a 4-digit PIN when opening the app</span></span>
         <label class="switch"><input type="checkbox" data-change="pin-toggle" ${M.pinHash ? 'checked' : ''} aria-label="App lock"><i></i></label></div>
-      <div class="item"><span class="bubble">☁️</span><span class="grow"><span class="title">Cloud backup</span>
+      <div class="item"><span class="bubble">☁️</span><span class="grow"><span class="title">Online backup (encrypted)</span>
         <span class="meta">${CFG.demo ? 'Off in the preview' : syncState.error && waiting ? esc(syncState.error) : waiting ? waiting + ' change(s) waiting to upload' : 'Backed up ' + ago(M.lastSync)}</span></span>
         <button class="btn sm" data-a="sync-now" aria-label="Back up now">${icon('sync')}</button></div>
       <button class="item" data-a="export"><span class="bubble">📤</span><span class="grow"><span class="title">Export to a spreadsheet file</span><span class="meta">All records as CSV</span></span>${icon('download')}</button>
     </section>
-    <section class="card flush"><button class="item" data-a="unpair"><span class="bubble">📵</span><span class="grow"><span class="title danger-text">${CFG.demo ? 'Clear the preview data' : 'Unpair this phone'}</span>
-      <span class="meta">${CFG.demo ? 'Removes the sample data from this phone.' : 'Removes the data from this phone. Our database keeps everything.'}</span></span></button></section>
+    ${CFG.demo ? '' : accountSection()}
+    <section class="card flush"><button class="item" data-a="sign-out"><span class="bubble">🚪</span><span class="grow"><span class="title danger-text">${CFG.demo ? 'Clear the preview data' : 'Sign out on this phone'}</span>
+      <span class="meta">${CFG.demo ? 'Removes the sample data from this phone.' : 'Your data stays backed up online.'}</span></span></button></section>
     <p class="muted tiny center-text">YH Tracker v2 · ${esc(CFG.build || 'dev')}${CFG.demo ? ' · preview' : ''}</p>`;
+}
+
+function accountSection() {
+  const u = M.user || {};
+  const pending = pendingRequests().length;
+  const row = (a, emoji, title, meta) => `<button class="item" data-a="${a}"><span class="bubble">${emoji}</span>
+    <span class="grow"><span class="title ellipsis">${title}</span>${meta ? `<span class="meta ellipsis">${meta}</span>` : ''}</span>${icon('next')}</button>`;
+  return `<section class="card flush"><div class="card-head"><h2 class="ellipsis">Account</h2><span class="muted small ellipsis">${esc(u.username || '')}</span></div>
+    ${row('change-password', '🔑', 'Change password', '')}
+    ${row('telegram', '✈️', 'Telegram for codes', u.telegram ? 'Linked' : 'Not linked: needed if you forget your password')}
+    ${row('requests', '📨', 'Data requests', pending ? pending + ' waiting for you' : 'When YC asks for a copy of your data')}</section>`;
 }
 
 const SCREENS = {

@@ -1,22 +1,13 @@
 // Sample data for the preview build (config demo: true): realistic Malaysian accounts, records,
-// budgets and bills, kept only on the phone. Same default categories as the server's setup.
+// budgets and bills, kept only on the phone. Starts from the same default categories as a new login.
 'use strict';
 
 function seedDemo() {
-  const CATS = [
-    ['expense', '🍜', 'Food & drinks', 600], ['expense', '🛒', 'Groceries', 400], ['expense', '🚗', 'Transport', 150], ['expense', '⛽', 'Petrol', 250],
-    ['expense', '🏠', 'Rent & housing', 0], ['expense', '💡', 'Bills & utilities', 0], ['expense', '📱', 'Phone & internet', 0],
-    ['expense', '🛍️', 'Shopping', 300], ['expense', '💊', 'Health', 0], ['expense', '🎬', 'Entertainment', 120], ['expense', '📚', 'Education', 0],
-    ['expense', '🛡️', 'Insurance', 0], ['expense', '👨‍👩‍👧', 'Family', 0], ['expense', '🎁', 'Gifts', 0], ['expense', '✈️', 'Travel', 0],
-    ['expense', '💳', 'Loan & credit card', 0], ['expense', '📦', 'Others', 0],
-    ['income', '💼', 'Salary', 0], ['income', '🎉', 'Bonus', 0], ['income', '💻', 'Side income', 0], ['income', '🏦', 'Interest & dividends', 0],
-    ['income', '🧧', 'Gift & angpao', 0], ['income', '↩️', 'Refund', 0], ['income', '📦', 'Other income', 0],
-  ];
-  const id = (n) => 'cat' + Shared.pad(n);
-  const C = {};
-  CATS.forEach((c, i) => { C[c[2].split(' ')[0]] = id(i); put('categories', { id: id(i), kind: c[0], icon: c[1], name: c[2], budget: c[3], order: i, archived: false }); });
-  put('settings', { id: 'name', value: 'YH' });
-  put('settings', { id: 'currency', value: 'RM' });
+  seedDefaults('YH');
+  const C = {}; // first word of each category's name -> its id
+  live('categories').forEach((c) => { C[c.name.split(' ')[0]] = c.id; });
+  [['Food', 600], ['Groceries', 400], ['Transport', 150], ['Petrol', 250], ['Shopping', 300], ['Entertainment', 120]]
+    .forEach(([k, budget]) => put('categories', Object.assign({}, S.categories[C[k]], { budget })));
 
   const A = (key, name, type, provider, opening, extra) => {
     put('accounts', Object.assign({ id: key, name, type, provider, opening, color: (PROVIDERS[provider] || [])[1] || '#3E7D27', order: Object.keys(S.accounts).length,

@@ -116,6 +116,7 @@ function persist(now) {
 }
 
 async function wipeLocal() {
+  dataKeyCache = null;
   S = emptyState();
   M = emptyMeta();
   version++;
@@ -283,7 +284,7 @@ let syncing = null;
 let syncAgain = false;
 let syncTimer = 0;
 let syncState = { online: navigator.onLine !== false, error: '' };
-let onUnpaired = () => {};
+let onSignedOut = () => {};
 
 async function api(fn, arg) {
   if (CFG.demo) return demoApi(fn);
@@ -292,7 +293,7 @@ async function api(fn, arg) {
   let res;
   try {
     res = await fetch(CFG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ctrl && ctrl.signal,
-      body: JSON.stringify(fn === 'pair' ? Object.assign({ fn }, arg) : { token: M.token, fn, args: [arg || {}] }) });
+      body: JSON.stringify({ token: M.token, fn, args: [arg || {}] }) });
   } catch (e) {
     throw Object.assign(new Error('No internet connection. Your changes are safe on this phone.'), { offline: true });
   } finally {
@@ -301,7 +302,7 @@ async function api(fn, arg) {
   let body;
   try { body = await res.json(); } catch (e) { throw new Error('The server didn’t answer properly. Try again in a minute.'); }
   if (!body.ok) {
-    if (body.code === 'UNPAIRED' && fn !== 'pair') onUnpaired(body.error);
+    if (body.code === 'SIGNED_OUT' && M.token) onSignedOut(body.error);
     throw new Error(body.error || 'Something went wrong.');
   }
   return body.result;
@@ -309,9 +310,25 @@ async function api(fn, arg) {
 
 // Preview builds run on sample data kept on the phone: nothing is sent anywhere.
 function demoApi(fn) {
-  if (fn === 'sync') { TABLES.forEach((t) => { M.dirty[t] = {}; }); return { cursor: 1, changes: {} }; }
-  if (fn === 'unpair') return {};
+  if (fn === 'sync') return { cursor: 1, changes: {}, requests: [] };
+  if (fn === 'signOut') return {};
   throw new Error('Not available in the demo. It works in the real app.');
+}
+
+// The data key (unlocks this user's records), cached as a CryptoKey.
+let dataKeyCache = null;
+async function dataKey() {
+  if (!dataKeyCache) dataKeyCache = await Crypt.dataKey(M.dk);
+  return dataKeyCache;
+}
+
+// Reminder times for the next 60 days, for the server's push timer: times only, no names or amounts.
+function reminderSchedule() {
+  const end = Shared.addDays(today(), 60) + ' 23:59';
+  const list = [];
+  activeBills().forEach((r) => Shared.notifyMoments(r).forEach((m) => { if (m.at <= end) list.push({ k: `${r.id}|${r.due}|${m.stage}`, at: m.at }); }));
+  list.sort((a, b) => (a.at > b.at ? 1 : -1));
+  return { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', list: list.slice(0, 150) };
 }
 
 const unsentCount = () => TABLES.reduce((n, t) => n + Object.keys(M.dirty[t]).length, 0);
@@ -327,25 +344,37 @@ async function sync() {
   syncing = (async () => {
     const sent = {};
     const changes = {};
-    TABLES.forEach((t) => {
-      const ids = Object.keys(M.dirty[t]);
-      if (!ids.length) return;
-      changes[t] = ids.map((id) => S[t][id]).filter(Boolean);
-      sent[t] = {};
-      changes[t].forEach((r) => { sent[t][r.id] = r.updatedAt; });
-    });
     try {
-      const res = await api('sync', { since: M.cursor, changes });
+      // Every record is encrypted before it leaves the phone.
+      const key = CFG.demo ? null : await dataKey();
+      for (const t of TABLES) {
+        const list = Object.keys(M.dirty[t]).map((id) => S[t][id]).filter(Boolean);
+        if (!list.length) continue;
+        sent[t] = {};
+        changes[t] = [];
+        for (const r of list) {
+          sent[t][r.id] = r.updatedAt;
+          changes[t].push({ id: r.id, updatedAt: r.updatedAt, deleted: !!r.deleted, data: key ? await Crypt.sealJson(key, r) : '' });
+        }
+      }
+      const sch = reminderSchedule();
+      const schText = JSON.stringify(sch);
+      const res = await api('sync', { since: M.cursor, changes, schedule: schText !== M.schedSent ? sch : undefined });
       let got = 0;
-      Object.keys(res.changes || {}).forEach((t) => {
-        if (!S[t]) return;
-        res.changes[t].forEach((rec) => {
+      for (const t of Object.keys(res.changes || {})) {
+        if (!S[t]) continue;
+        for (const enc of res.changes[t]) {
+          let rec;
+          try { rec = await Crypt.openJson(key, enc.data); } catch (e) { console.error('Could not open a record', t, enc.id); continue; }
           const mine = S[t][rec.id];
-          if (mine && M.dirty[t][rec.id] && mine.updatedAt > rec.updatedAt) return; // changed again here since
+          if (mine && M.dirty[t][rec.id] && mine.updatedAt > rec.updatedAt) continue; // changed again here since
           S[t][rec.id] = rec;
           got++;
-        });
-      });
+        }
+      }
+      M.schedSent = schText;
+      if (res.requests) M.requests = res.requests;
+      if (res.me && M.user) M.user = Object.assign({}, M.user, res.me);
       Object.keys(sent).forEach((t) => Object.keys(sent[t]).forEach((id) => {
         if (S[t][id] && S[t][id].updatedAt === sent[t][id]) delete M.dirty[t][id];
       }));
@@ -471,4 +500,22 @@ async function hashPin(pin, salt) {
   const data = new TextEncoder().encode(salt + ':' + pin);
   const buf = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ============================== a new account's starting data ==============================
+
+const DEFAULT_CATEGORIES = [
+  ['expense', '🍜', 'Food & drinks'], ['expense', '🛒', 'Groceries'], ['expense', '🚗', 'Transport'], ['expense', '⛽', 'Petrol'],
+  ['expense', '🏠', 'Rent & housing'], ['expense', '💡', 'Bills & utilities'], ['expense', '📱', 'Phone & internet'],
+  ['expense', '🛍️', 'Shopping'], ['expense', '💊', 'Health'], ['expense', '🎬', 'Entertainment'], ['expense', '📚', 'Education'],
+  ['expense', '🛡️', 'Insurance'], ['expense', '👨‍👩‍👧', 'Family'], ['expense', '🎁', 'Gifts'], ['expense', '✈️', 'Travel'],
+  ['expense', '💳', 'Loan & credit card'], ['expense', '📦', 'Others'],
+  ['income', '💼', 'Salary'], ['income', '🎉', 'Bonus'], ['income', '💻', 'Side income'], ['income', '🏦', 'Interest & dividends'],
+  ['income', '🧧', 'Gift & angpao'], ['income', '↩️', 'Refund'], ['income', '📦', 'Other income'],
+];
+
+function seedDefaults(name) {
+  DEFAULT_CATEGORIES.forEach((c, i) => put('categories', { id: 'cat' + Shared.pad(i), kind: c[0], icon: c[1], name: c[2], budget: 0, order: i, archived: false }));
+  put('settings', { id: 'name', value: name || '' });
+  put('settings', { id: 'currency', value: 'RM' });
 }
