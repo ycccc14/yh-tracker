@@ -86,7 +86,9 @@ function closeSheet(result) {
   e.wrap.classList.remove('open');
   setTimeout(() => e.wrap.remove(), 320);
   if (e.opts.onClose) e.opts.onClose(result);
+  if (!sheetStack.length) setTimeout(() => whenSheetsClosed(), 350);
 }
+let whenSheetsClosed = () => {}; // main.js: e.g. switch to a waiting new version
 const topSheet = () => (sheetStack.length ? sheetStack[sheetStack.length - 1].sheet : null);
 const closeAllSheets = () => { while (sheetStack.length) closeSheet(); };
 actions['close-sheet'] = () => closeSheet();

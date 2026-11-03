@@ -28,6 +28,7 @@ function render() {
   $('.tab-dot').hidden = !billsAttention().some((x) => x.days <= 0) && !pendingRequests().length; // on Home: bills due, or a data request
   updateBadge();
   maybePromptRequest();
+  reloadIfFree();
 }
 
 // Redraw after data changes, at most once per frame.
@@ -283,7 +284,20 @@ actions['pin-toggle'] = async (el) => {
 
 // ============================== start-up ==============================
 let started = false;
-let reloadWhenFree = false;
+let lastPush = null; // the last notification that arrived while the app was open
+let reloadWhenFree = false; // a new version is waiting: switch as soon as she's not in the middle of something
+let swReg = null;
+
+// Ask for a new version of the app (when it comes to the front, and every few minutes while open).
+function checkForUpdate() {
+  if (swReg) swReg.update().catch(() => { /* offline */ });
+}
+function reloadIfFree() {
+  if (!reloadWhenFree || sheetStack.length || locked) return;
+  try { sessionStorage.setItem('yh-updated', '1'); } catch (e) { /* private mode */ }
+  location.reload();
+}
+whenSheetsClosed = reloadIfFree;
 
 function start() {
   $('#cover').hidden = true;
@@ -299,7 +313,9 @@ function start() {
     autoRecordBills(); // bills set to record automatically (also catches up on missed ones)
   });
   refreshPush();
-  setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 5 * 60 * 1000);
+  // While the app is open, changes from other phones (and new data requests) arrive within ~20 s.
+  setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 20000);
+  setInterval(() => { if (document.visibilityState === 'visible') checkForUpdate(); }, 5 * 60 * 1000);
 }
 
 onSignedOut = async (msg) => {
@@ -312,12 +328,13 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     M.hiddenAt = Date.now();
     persist(true);
-    if (reloadWhenFree) location.reload();
+    if (reloadWhenFree) location.reload(); // switch to the new version while she's away
     return;
   }
+  checkForUpdate();
   if (!M.token) return;
   if (M.pinHash && Date.now() - (M.hiddenAt || 0) > 60000) lockApp();
-  if (Date.now() - M.lastSync > 30000) sync();
+  sync(); // back in front: fetch anything new straight away
   autoRecordBills();
   render(); // "today" may have changed
 });
@@ -326,17 +343,29 @@ window.addEventListener('offline', () => { syncState.online = false; emit(); });
 
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   const had = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('sw.js').catch(() => { /* still works, just not offline */ });
-  // A new version arrived: switch to it now, or when she's not in the middle of something.
+  navigator.serviceWorker.register('sw.js').then((reg) => { swReg = reg; }).catch(() => { /* still works, just not offline */ });
+  // A new version arrived: switch to it now, or as soon as she closes what she's doing.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!had) return;
-    if (sheetStack.length || locked) reloadWhenFree = true; else location.reload();
+    reloadWhenFree = true;
+    reloadIfFree();
   });
-  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.go && M.token && !locked) go(e.data.go); });
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.pushed && M.token) { // a notification just arrived while the app is open
+      lastPush = e.data.pushed;
+      if (lastPush.go === 'request') sync(); // the new request then opens by itself
+      return;
+    }
+    if (!e.data || !e.data.go || !M.token) return;
+    if (e.data.go === 'request') showRequestFromNotification(); else if (!locked) go(e.data.go);
+  });
 }
 
 (async function boot() {
   $$('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+  try {
+    if (sessionStorage.getItem('yh-updated')) { sessionStorage.removeItem('yh-updated'); setTimeout(() => toast('Updated to the latest version ✓'), 600); }
+  } catch (e) { /* private mode */ }
   try {
     await loadLocal();
   } catch (e) {
@@ -344,6 +373,10 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     return;
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  if (/[?&]open=request/.test(location.search)) { // opened by tapping a data-request notification
+    wantRequest = Date.now();
+    history.replaceState(null, '', location.pathname + '#home');
+  }
   if (M.token && !M.dk && !CFG.demo) { // signed in with the old pairing (before logins): start fresh
     await wipeLocal();
     showWelcome('YH Tracker now has its own login, and your data is locked with your password. Sign in, or create your account with an invite code.');

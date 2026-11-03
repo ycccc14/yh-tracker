@@ -256,9 +256,11 @@ function fmtWhen(ms) {
   return fmtDate(Shared.ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()), true) + ', ' + Shared.pad(d.getHours()) + ':' + Shared.pad(d.getMinutes());
 }
 
+let shownReq = ''; // the request already shown since the app opened
+let wantRequest = 0; // when a request notification was tapped: show the request after a fresh sync
+
 function openRequest(r) {
-  M.promptedReq = r.id;
-  persist();
+  shownReq = r.id;
   const sh = openSheet(sheetHead('Data request') + `<div class="sheet-body">
       <div class="center-text"><span class="hero-emoji">📨</span><h2>YC asks for a copy of your data</h2><p class="muted small">${fmtWhen(r.asked)}</p></div>
       ${r.reason ? `<div class="banner"><p>“${esc(r.reason)}”</p></div>` : ''}
@@ -292,8 +294,23 @@ actions['requests'] = () => {
       : '<section class="card"><div class="empty">No requests yet.</div></section>'}</div>`);
 };
 
-// A new request opens by itself once (when nothing else is open).
+// A waiting request opens by itself once each time the app opens (when nothing else is open),
+// and straight away after tapping its notification.
 function maybePromptRequest() {
+  if (sheetStack.length || !$('#cover').hidden) return;
   const r = pendingRequests()[0];
-  if (r && M.promptedReq !== r.id && !sheetStack.length && $('#cover').hidden) openRequest(r);
+  if (r && (wantRequest || shownReq !== r.id)) {
+    wantRequest = 0;
+    openRequest(r);
+  } else if (!r && wantRequest && M.lastSync > wantRequest) {
+    wantRequest = 0;
+    toast('No request is waiting for you');
+  }
+}
+
+function showRequestFromNotification() {
+  wantRequest = Date.now();
+  if (view.route !== 'home') go('home');
+  sync();
+  render();
 }

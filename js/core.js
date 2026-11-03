@@ -133,7 +133,7 @@ function put(table, rec) {
   M.dirty[table][rec.id] = 1;
   version++;
   persist();
-  scheduleSync(1200);
+  scheduleSync(400); // back it up straight away (several quick changes still go in one upload)
   emit();
   return rec;
 }
