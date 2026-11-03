@@ -164,7 +164,7 @@ function homeScreen() {
   const prev = spentUpTo(shiftMonth(ym, -1), +today().slice(8));
   const bud = budgetTotals(ym);
   const attn = billsAttention();
-  let out = screenHead(`${hello}, ${esc(setting('name') || 'YH')}`, { sub: fmtDate(today(), true),
+  let out = screenHead(setting('name') ? `${hello}, ${esc(setting('name'))}` : hello, { sub: fmtDate(today(), true),
     right: eyeBtn() + `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
 
   if (CFG.demo) out += `<div class="banner"><p>🧪 <b>Preview with sample data.</b> Nothing here is saved to the cloud. <button class="link" data-a="demo-reset">Start over</button></p></div>`;
@@ -445,13 +445,13 @@ function budgetScreen() {
 function pushBanner() {
   const st = pushState();
   if (CFG.demo) return '<div class="banner"><p>🔔 Notifications work in the real app, not in this preview.</p></div>';
-  if (st === 'on') {
-    return `<div class="banner"><div class="spread"><p>🔔 Notifications are on</p><button class="btn sm" data-a="push-test">Send a test</button></div></div>`;
+  if (st === 'on') { // a test only until the first one; after that it lives in Settings ▸ Notifications
+    return M.pushTested ? '' : `<div class="banner"><div class="spread"><p>🔔 Notifications are on</p><button class="btn sm" data-a="push-test">Send a test</button></div></div>`;
   }
   const text = {
-    install: '🔔 To get bill notifications, open YH Tracker from your Home Screen (Share ▸ Add to Home Screen).',
+    install: '🔔 To get bill notifications, open My Tracker from your Home Screen (Share ▸ Add to Home Screen).',
     unsupported: '🔔 This phone can’t show notifications from this app. Updating to iOS 16.4 or later fixes it.',
-    denied: '🔕 Notifications are blocked. Open iPhone Settings ▸ Notifications ▸ YH Tracker and turn on Allow Notifications.',
+    denied: '🔕 Notifications are blocked. Open iPhone Settings ▸ Notifications ▸ My Tracker and turn on Allow Notifications.',
     default: '🔔 Get a notification on your phone before each bill is due.',
   }[st];
   return `<div class="banner ${st === 'denied' ? 'warn' : ''}"><p>${text}</p>${st === 'default' ? '<button class="btn primary block" data-a="push-on">Turn on notifications</button>' : ''}</div>`;
@@ -522,7 +522,8 @@ function settingsScreen() {
     `<section class="card"><label class="field"><span>Your name</span><input class="input" maxlength="30" value="${esc(setting('name'))}" data-change="set-name" autocomplete="given-name"></label></section>
     <section class="card flush">${link('wallet', '💳', 'Accounts', n + ' account' + (n === 1 ? '' : 's'))}
     ${link('categories', '🏷️', 'Categories', 'Add, rename, sort')}${link('budget', '🎯', 'Budget', 'Monthly budget for each category')}
-    ${link('bills', '🔔', 'Bills & notifications', CFG.demo ? 'Preview' : ps === 'on' ? 'Notifications on' : 'Notifications off')}</section>
+    ${link('bills', '🗓️', 'Bills', reminders().filter((r) => r.active).length + ' active')}</section>
+    ${notificationsSection(ps)}
     <section class="card flush">
       <div class="item"><span class="bubble">🙈</span><span class="grow"><span class="title">Hide amounts</span><span class="meta">Show •••• instead of money, e.g. in public</span></span>
         <label class="switch"><input type="checkbox" data-change="privacy-toggle" ${M.hideAmounts ? 'checked' : ''} aria-label="Hide amounts"><i></i></label></div>
@@ -536,7 +537,23 @@ function settingsScreen() {
     ${CFG.demo ? '' : accountSection()}
     <section class="card flush"><button class="item" data-a="sign-out"><span class="bubble">🚪</span><span class="grow"><span class="title danger-text">${CFG.demo ? 'Clear the preview data' : 'Sign out on this phone'}</span>
       <span class="meta">${CFG.demo ? 'Removes the sample data from this phone.' : 'Your data stays backed up online.'}</span></span></button></section>
-    <p class="muted tiny center-text">YH Tracker v2 · ${esc(CFG.build || 'dev')}${CFG.demo ? ' · preview' : ''}</p>`;
+    <p class="muted tiny center-text">My Tracker v2 · ${esc(CFG.build || 'dev')}${CFG.demo ? ' · preview' : ''}</p>`;
+}
+
+// Settings ▸ Notifications: on/off and a test.
+function notificationsSection(ps) {
+  const why = {
+    on: 'Bill reminders and data requests',
+    default: 'Off',
+    denied: 'Blocked: iPhone Settings ▸ Notifications ▸ My Tracker',
+    install: 'Open My Tracker from your Home Screen to use them',
+    unsupported: 'Needs iOS 16.4 or later',
+  }[ps];
+  return `<section class="card flush"><div class="item"><span class="bubble">🔔</span><span class="grow"><span class="title">Notifications</span>
+      <span class="meta">${CFG.demo ? 'Not in the preview' : why}</span></span>
+      <label class="switch"><input type="checkbox" data-change="push-toggle" ${ps === 'on' ? 'checked' : ''} ${CFG.demo || ps === 'install' || ps === 'unsupported' ? 'disabled' : ''} aria-label="Notifications"><i></i></label></div>
+    ${ps === 'on' ? `<button class="item" data-a="push-test"><span class="bubble">📲</span><span class="grow"><span class="title">Send a test notification</span>
+      <span class="meta">Check that this phone gets them</span></span>${icon('next')}</button>` : ''}</section>`;
 }
 
 function accountSection() {

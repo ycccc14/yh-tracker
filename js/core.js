@@ -357,6 +357,7 @@ async function sync() {
           changes[t].push({ id: r.id, updatedAt: r.updatedAt, deleted: !!r.deleted, data: key ? await Crypt.sealJson(key, r) : '' });
         }
       }
+      if ((M.answers || []).length) await sendAnswers(); // answers to data requests go first
       const sch = reminderSchedule();
       const schText = JSON.stringify(sch);
       const res = await api('sync', { since: M.cursor, changes, schedule: schText !== M.schedSent ? sch : undefined });
@@ -373,7 +374,7 @@ async function sync() {
         }
       }
       M.schedSent = schText;
-      if (res.requests) M.requests = res.requests;
+      if (res.requests) { M.requests = res.requests; applyAnswers(); }
       if (res.me && M.user) M.user = Object.assign({}, M.user, res.me);
       Object.keys(sent).forEach((t) => Object.keys(sent[t]).forEach((id) => {
         if (S[t][id] && S[t][id].updatedAt === sent[t][id]) delete M.dirty[t][id];
@@ -436,7 +437,7 @@ function keyBytes(b64) {
 
 async function enablePush() {
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked. Turn them on in iPhone Settings ▸ Notifications ▸ YH Tracker.' : 'Notifications weren’t allowed.');
+  if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked. Turn them on in iPhone Settings ▸ Notifications ▸ My Tracker.' : 'Notifications weren’t allowed.');
   const reg = await navigator.serviceWorker.ready;
   const { key } = await api('pushKey');
   let sub = await reg.pushManager.getSubscription();

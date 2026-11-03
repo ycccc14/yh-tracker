@@ -38,7 +38,7 @@ function saltFor(username) {
 }
 
 function showWelcome(note) {
-  cover(`${appIcon}<div><h1>YH Tracker</h1><p class="muted" style="margin-top:6px">Sign in to see your money on any phone.</p></div>
+  cover(`${appIcon}<div><h1>My Tracker</h1><p class="muted" style="margin-top:6px">Sign in to see your money on any phone.</p></div>
     ${note ? `<div class="banner warn"><p>${esc(note)}</p></div>` : ''}
     <section class="card stack" style="text-align:left">
       <label class="field"><span>Username</span><input class="input" id="in-user" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30"></label>
@@ -259,6 +259,12 @@ function fmtWhen(ms) {
 let shownReq = ''; // the request already shown since the app opened
 let wantRequest = 0; // when a request notification was tapped: show the request after a fresh sync
 
+// A request that came with a tapped notification goes into the list at once (no waiting for the server).
+function knowRequest(r) {
+  if (!r || !r.id || (M.requests || []).some((x) => x.id === r.id)) return;
+  M.requests = [Object.assign({ status: 'pending' }, r)].concat(M.requests || []);
+}
+
 function openRequest(r) {
   shownReq = r.id;
   const sh = openSheet(sheetHead('Data request') + `<div class="sheet-body">
@@ -269,22 +275,44 @@ function openRequest(r) {
       <button class="btn block" data-a="request-answer" data-v="no">Decline</button></div>`);
   sh._st = r;
 }
-actions['request-answer'] = async (el) => {
+
+// The answer shows at once; it's sent in the background and kept until the server has it (offline too).
+actions['request-answer'] = (el) => {
   const r = sheetState();
   const approve = el.dataset.v === 'yes';
-  el.disabled = true;
-  try {
-    await api('answerRequest', { id: r.id, approve });
-    M.requests = (M.requests || []).map((x) => (x.id === r.id ? Object.assign({}, x, { status: approve ? 'approved' : 'declined', answered: Date.now() }) : x));
-    persist();
-    closeSheet();
-    toast(approve ? 'Approved ✓ YC can download one copy' : 'Declined');
-    render();
-  } catch (e) {
-    el.disabled = false;
-    toast(e.message, 4000);
-  }
+  M.answers = (M.answers || []).filter((a) => a.id !== r.id).concat([{ id: r.id, approve }]);
+  applyAnswers();
+  persist();
+  closeSheet();
+  toast(approve ? 'Approved ✓ YC can download one copy' : 'Declined');
+  render();
+  sendAnswers();
 };
+
+// Answers not yet on the server win over what the server last said.
+function applyAnswers() {
+  const mine = {};
+  (M.answers || []).forEach((a) => { mine[a.id] = a.approve ? 'approved' : 'declined'; });
+  M.requests = (M.requests || []).map((x) => (mine[x.id] && x.status === 'pending' ? Object.assign({}, x, { status: mine[x.id], answered: x.answered || Date.now() }) : x));
+}
+
+let sendingAnswers = null;
+function sendAnswers() {
+  if (sendingAnswers || !(M.answers || []).length) return sendingAnswers;
+  sendingAnswers = (async () => {
+    for (const a of M.answers.slice()) {
+      try {
+        await api('answerRequest', { id: a.id, approve: a.approve });
+      } catch (e) {
+        if (e.offline) break; // try again at the next sync
+        if (!/already answered/.test(e.message)) toast(e.message, 4000);
+      }
+      M.answers = (M.answers || []).filter((x) => x.id !== a.id);
+      persist();
+    }
+  })().finally(() => { sendingAnswers = null; });
+  return sendingAnswers;
+}
 actions['request-review'] = () => { const r = pendingRequests()[0]; if (r) openRequest(r); };
 actions['requests'] = () => {
   const list = M.requests || [];
@@ -304,13 +332,16 @@ function maybePromptRequest() {
     openRequest(r);
   } else if (!r && wantRequest && M.lastSync > wantRequest) {
     wantRequest = 0;
-    toast('No request is waiting for you');
+    const last = (M.requests || [])[0];
+    toast(last && last.status === 'approved' ? 'You already approved YC’s request ✓ YC can download it now.' : 'No request is waiting for you', 3500);
   }
 }
 
-function showRequestFromNotification() {
+// Tapped a data-request notification: show it now if it came along, and check with the server too.
+function showRequestFromNotification(request) {
+  knowRequest(request);
   wantRequest = Date.now();
   if (view.route !== 'home') go('home');
-  sync();
   render();
+  sync();
 }

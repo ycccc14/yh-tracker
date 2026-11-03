@@ -1,10 +1,10 @@
 // Keeps the app's files on the phone (opens instantly, works offline) and shows bill notifications.
 // Pushes from the server are empty: the text comes from the bills stored on this phone, so it is
 // always current (a bill paid a minute ago isn't mentioned) and nothing personal travels via Apple.
-importScripts('config.js?v=284ca3065d', 'shared.js?v=284ca3065d');
+importScripts('config.js?v=b9481b1074', 'shared.js?v=b9481b1074');
 
-const CACHE = 'yh-284ca3065d';
-const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=284ca3065d", "shared.js?v=284ca3065d", "app.css?v=284ca3065d", "js/account.js?v=284ca3065d", "js/calc.js?v=284ca3065d", "js/core.js?v=284ca3065d", "js/crypto.js?v=284ca3065d", "js/demo.js?v=284ca3065d", "js/editors.js?v=284ca3065d", "js/main.js?v=284ca3065d", "js/screens.js?v=284ca3065d", "js/ui.js?v=284ca3065d", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
+const CACHE = 'yh-b9481b1074';
+const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=b9481b1074", "shared.js?v=b9481b1074", "app.css?v=b9481b1074", "js/account.js?v=b9481b1074", "js/calc.js?v=b9481b1074", "js/core.js?v=b9481b1074", "js/crypto.js?v=b9481b1074", "js/demo.js?v=b9481b1074", "js/editors.js?v=b9481b1074", "js/main.js?v=b9481b1074", "js/screens.js?v=b9481b1074", "js/ui.js?v=b9481b1074", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -77,13 +77,14 @@ async function reminderText() {
   }
   const inbox = await askInbox(meta);
   const request = inbox && (inbox.why === 'request' || (inbox.why !== 'bills' && inbox.requests.length > 0));
-  if (request) return { title: '📨 YC asks for a copy of your data', body: 'Tap to approve or decline.', tag: 'request', go: 'request' };
+  // The request goes along with the notification, so tapping it opens Approve / Decline at once.
+  if (request) return { title: '📨 YC asks for a copy of your data', body: 'Tap to approve or decline.', tag: 'request', go: 'request', request: inbox.requests[0] || null };
   const d = new Date();
   const today = Shared.ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
   const rems = state && state.reminders ? Object.values(state.reminders) : [];
   const cur = state && state.settings && state.settings.currency ? state.settings.currency.value : 'RM';
   const list = Shared.billsNeedingAttention(rems, today);
-  if (!list.length) return inbox === null ? { title: 'YH Tracker', body: 'You have something new. Tap to open.', go: 'request' } : { title: 'YH Tracker', body: 'Tap to check your bills.', go: 'bills' };
+  if (!list.length) return inbox === null ? { title: 'My Tracker', body: 'You have something new. Tap to open.', go: 'request' } : { title: 'My Tracker', body: 'Tap to check your bills.', go: 'bills' };
   if (list.length === 1) {
     const x = list[0];
     return { title: `🔔 ${x.rem.title} ${when(x.days)}`, body: (x.rem.amount ? money(x.rem.amount, cur) + ' · ' : '') + 'Tap to mark it as paid.', go: 'bills' };
@@ -98,9 +99,9 @@ async function reminderText() {
 
 self.addEventListener('push', (e) => {
   // A notification must always appear, even if working out the text fails.
-  e.waitUntil(reminderText().catch(() => ({ title: 'YH Tracker', body: 'Tap to open.', go: 'request' })).then((m) => {
+  e.waitUntil(reminderText().catch(() => ({ title: 'My Tracker', body: 'Tap to open.', go: 'request' })).then((m) => {
     const shown = self.registration.showNotification(m.title, {
-      body: m.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: m.tag || 'bills', renotify: true, data: { go: m.go },
+      body: m.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: m.tag || 'bills', renotify: true, data: { go: m.go, request: m.request || null },
     });
     if (self.navigator.setAppBadge && m.count) self.navigator.setAppBadge(m.count).catch(() => {});
     // If the app is open, tell it too (a data request then shows straight away).
@@ -112,12 +113,15 @@ self.addEventListener('push', (e) => {
 // Tapping a notification opens the app on the right thing: a data request opens its Approve / Decline sheet.
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const go = (e.notification.data && e.notification.data.go) || 'bills';
+  const data = e.notification.data || {};
+  const go = data.go || 'bills';
+  const request = data.request || null;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
     for (const c of list) {
-      c.postMessage({ go });
+      c.postMessage({ go, request });
       return c.focus();
     }
-    return self.clients.openWindow(go === 'request' ? './?open=request#home' : './#' + go);
+    if (go !== 'request') return self.clients.openWindow('./#' + go);
+    return self.clients.openWindow('./?open=request' + (request ? '&r=' + encodeURIComponent(JSON.stringify(request)) : '') + '#home');
   }));
 });

@@ -114,11 +114,26 @@ actions['push-on'] = async (el) => {
   el.disabled = false;
   render();
 };
-actions['push-nag-off'] = () => { M.pushNagOff = true; persist(); render(); toast('You can turn them on later in Bills'); };
+actions['push-toggle'] = async (el) => {
+  const on = el.checked;
+  el.disabled = true;
+  try {
+    if (on) { await enablePush(); toast('Notifications on ✓'); } else { await disablePush(); toast('Notifications off'); }
+  } catch (e) {
+    el.checked = !on;
+    toast(e.message, 4500);
+  }
+  el.disabled = false;
+  render();
+};
+actions['push-nag-off'] = () => { M.pushNagOff = true; persist(); render(); toast('You can turn them on later in Settings ▸ Notifications'); };
 actions['push-test'] = async (el) => {
   el.disabled = true;
   try {
     await testPush();
+    M.pushTested = true;
+    persist();
+    render();
     toast('Sent — it should arrive in a few seconds');
   } catch (e) {
     toast(e.message, 4500);
@@ -137,9 +152,9 @@ actions.export = async () => {
     rows.push([t.date, t.type, Number(t.amount).toFixed(2)].map((v) => csvCell(v)).concat(
       [name(t.accountId), name(t.toAccountId), name(t.categoryId), t.note].map((v) => csvCell(v, true))).join(','));
   });
-  const file = new File(['﻿' + rows.join('\r\n')], `YH-Tracker-${today()}.csv`, { type: 'text/csv' });
+  const file = new File(['﻿' + rows.join('\r\n')], `My-Tracker-${today()}.csv`, { type: 'text/csv' });
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'YH Tracker records' }); return; }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'My Tracker records' }); return; }
   } catch (e) {
     if (e.name === 'AbortError') return;
   }
@@ -162,11 +177,11 @@ function cover(html) {
 const appIcon = '<img class="app-icon" src="icons/icon-180.png" alt="" width="88" height="88">';
 
 function showInstall() {
-  cover(`${appIcon}<div><h1>Install YH Tracker</h1><p class="muted" style="margin-top:6px">Add it to your Home Screen so it opens like a normal app, works offline and can remind you about bills.</p></div>
+  cover(`${appIcon}<div><h1>Install My Tracker</h1><p class="muted" style="margin-top:6px">Add it to your Home Screen so it opens like a normal app, works offline and can remind you about bills.</p></div>
     <section class="card"><ol class="steps">
       <li><span>Tap the <b>Share</b> button <span style="display:inline-block;vertical-align:-5px;color:var(--series-income)">${icon('share')}</span> at the bottom of Safari.</span></li>
       <li><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>
-      <li><span>Tap <b>Add</b>, then open <b>YH Tracker</b> from your Home Screen.</span></li></ol></section>
+      <li><span>Tap <b>Add</b>, then open <b>My Tracker</b> from your Home Screen.</span></li></ol></section>
     <p class="muted small">Prefer not to install? <button class="link" data-a="skip-install">Continue in the browser</button></p>`);
 }
 actions['skip-install'] = () => (CFG.demo ? startDemo() : showWelcome());
@@ -357,7 +372,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       return;
     }
     if (!e.data || !e.data.go || !M.token) return;
-    if (e.data.go === 'request') showRequestFromNotification(); else if (!locked) go(e.data.go);
+    if (e.data.go === 'request') showRequestFromNotification(e.data.request); else if (!locked) go(e.data.go);
   });
 }
 
@@ -369,17 +384,19 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   try {
     await loadLocal();
   } catch (e) {
-    cover(`${appIcon}<h1>Can’t open storage</h1><p class="muted">The phone didn’t let the app save data. If you’re in Private Browsing, switch it off, or open YH Tracker from the Home Screen.</p>`);
+    cover(`${appIcon}<h1>Can’t open storage</h1><p class="muted">The phone didn’t let the app save data. If you’re in Private Browsing, switch it off, or open My Tracker from the Home Screen.</p>`);
     return;
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  if (/[?&]open=request/.test(location.search)) { // opened by tapping a data-request notification
+  const opened = new URLSearchParams(location.search);
+  if (opened.get('open') === 'request') { // opened by tapping a data-request notification
+    try { knowRequest(JSON.parse(opened.get('r') || 'null')); } catch (e) { /* no request in the link */ }
     wantRequest = Date.now();
     history.replaceState(null, '', location.pathname + '#home');
   }
   if (M.token && !M.dk && !CFG.demo) { // signed in with the old pairing (before logins): start fresh
     await wipeLocal();
-    showWelcome('YH Tracker now has its own login, and your data is locked with your password. Sign in, or create your account with an invite code.');
+    showWelcome('My Tracker now has its own login, and your data is locked with your password. Sign in, or create your account with an invite code.');
     return;
   }
   if (!M.token) {
