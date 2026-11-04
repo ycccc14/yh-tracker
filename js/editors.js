@@ -229,7 +229,7 @@ function drawBank(sh) {
       <label class="frow"><span>Name</span><input id="bank-name" maxlength="30" placeholder="${noun === 'e-wallet' ? 'e.g. WeChat Pay' : 'e.g. Bank of China'}" value="${esc(st.name)}" data-input="bank-name"></label>
     </section>
     <div class="field"><span>Logo</span>
-      <div class="row-btns"><label class="btn file-pick">🖼️ ${st.logo ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="bank-logo"></label>
+      <div class="pic-btns"><label class="btn file-pick">🖼️ ${st.logo ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="bank-logo"></label>
         ${st.logo ? '<button class="btn" data-a="bank-logo-clear">Remove</button>' : ''}</div>
       <span class="help">A screenshot of the bank’s app icon works well. Without one, its initials are shown.</span></div>
     <div class="field"><span>Colour</span><div class="swatches">${CARD_COLORS.concat(CARD_COLORS.indexOf(st.color) < 0 ? [st.color] : []).map((c) => `<button class="${st.color === c ? 'on' : ''}" style="background:${c}" data-a="bank-color" data-v="${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>

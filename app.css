@@ -147,8 +147,10 @@ button.item:active, .item.tap:active { background: var(--soft); }
 .item.split { padding: 0 6px 0 0; gap: 0; }
 .item.split > .pick { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 62px; padding: 11px 12px 11px 16px; border: 0; background: none; }
 .bank-preview { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 4px 2px; font-size: 18px; }
-.row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-.file-pick { position: relative; display: inline-flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; }
+.pic-btns { display: flex; gap: 8px; }
+.pic-btns .btn { flex: none; }
+.pic-btns .file-pick { flex: 1; }
+.file-pick { position: relative; overflow: hidden; white-space: nowrap; }
 .file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 /* ============================== hero ============================== */
