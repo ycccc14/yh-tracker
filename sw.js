@@ -1,10 +1,10 @@
 // Keeps the app's files on the phone (opens instantly, works offline) and shows bill notifications.
 // Pushes from the server are empty: the text comes from the bills stored on this phone, so it is
 // always current (a bill paid a minute ago isn't mentioned) and nothing personal travels via Apple.
-importScripts('config.js?v=63d2e79622', 'shared.js?v=63d2e79622');
+importScripts('config.js?v=f0745b5f38', 'shared.js?v=f0745b5f38');
 
-const CACHE = 'yh-63d2e79622';
-const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=63d2e79622", "shared.js?v=63d2e79622", "app.css?v=63d2e79622", "js/account.js?v=63d2e79622", "js/calc.js?v=63d2e79622", "js/core.js?v=63d2e79622", "js/crypto.js?v=63d2e79622", "js/demo.js?v=63d2e79622", "js/editors.js?v=63d2e79622", "js/main.js?v=63d2e79622", "js/screens.js?v=63d2e79622", "js/ui.js?v=63d2e79622", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png"];
+const CACHE = 'yh-f0745b5f38';
+const FILES = ["./", "index.html", "manifest.webmanifest", "config.js?v=f0745b5f38", "shared.js?v=f0745b5f38", "app.css?v=f0745b5f38", "js/account.js?v=f0745b5f38", "js/calc.js?v=f0745b5f38", "js/core.js?v=f0745b5f38", "js/crypto.js?v=f0745b5f38", "js/demo.js?v=f0745b5f38", "js/editors.js?v=f0745b5f38", "js/main.js?v=f0745b5f38", "js/screens.js?v=f0745b5f38", "js/ui.js?v=f0745b5f38", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-32.png", "icons/icon-512-maskable.png", "icons/icon-512.png", "logos/aeon.png", "logos/affin.png", "logos/agro.png", "logos/alliance.png", "logos/ambank.png", "logos/asb.png", "logos/atome.png", "logos/bigpay.png", "logos/bimb.png", "logos/boost.png", "logos/boostbank.png", "logos/bsn.png", "logos/cimb.png", "logos/grab.png", "logos/grabpl.png", "logos/gxbank.png", "logos/hlb.png", "logos/hsbc.png", "logos/kwsp.png", "logos/mae.png", "logos/maybank.png", "logos/muamalat.png", "logos/ocbc.png", "logos/pbb.png", "logos/rakyat.png", "logos/rhb.png", "logos/ryt.png", "logos/scb.png", "logos/setel.png", "logos/shopee.png", "logos/spaylater.png", "logos/stashaway.png", "logos/th.png", "logos/tng.png", "logos/tngcard.png", "logos/uob.png", "logos/versa.png"];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

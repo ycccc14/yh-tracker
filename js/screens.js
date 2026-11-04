@@ -25,7 +25,7 @@ const KIND_ORDER = ['bank', 'ewallet', 'cash', 'savings', 'prepaid', 'card', 'pa
 const kindOf = (a) => KINDS[a && a.type] || KINDS.bank;
 const isDebt = (a) => !!kindOf(a).debt;
 
-// Coloured badges with initials (not the companies' logos): [name, colour, text colour, initials].
+// Banks and e-wallets: [name, colour, text colour, initials]. Each one has its logo in logos/<key>.png.
 const PROVIDERS = {
   maybank: ['Maybank', '#FFC83D', '#1A1A1A', 'MB'], cimb: ['CIMB', '#D7141A', '#fff', 'C'], pbb: ['Public Bank', '#C8102E', '#fff', 'PB'],
   rhb: ['RHB', '#005DAA', '#fff', 'RHB'], hlb: ['Hong Leong', '#003A79', '#fff', 'HL'], ambank: ['AmBank', '#E31837', '#fff', 'Am'],
@@ -33,7 +33,7 @@ const PROVIDERS = {
   ocbc: ['OCBC', '#E2231A', '#fff', 'O'], hsbc: ['HSBC', '#DB0011', '#fff', 'H'], alliance: ['Alliance Bank', '#0083BE', '#fff', 'A'],
   affin: ['Affin Bank', '#00468B', '#fff', 'Af'], rakyat: ['Bank Rakyat', '#00599C', '#fff', 'BR'], muamalat: ['Bank Muamalat', '#6D2077', '#fff', 'BM'],
   agro: ['Agrobank', '#00843D', '#fff', 'Ag'], scb: ['Standard Chartered', '#0473EA', '#fff', 'SC'], gxbank: ['GXBank', '#5B2DE1', '#fff', 'GX'],
-  aeon: ['AEON Bank', '#B6007A', '#fff', 'AE'], boostbank: ['Boost Bank', '#E1251B', '#fff', 'BB'],
+  aeon: ['AEON Bank', '#B6007A', '#fff', 'AE'], boostbank: ['Boost Bank', '#E1251B', '#fff', 'BB'], ryt: ['Ryt Bank', '#0000F1', '#fff', 'Ryt'],
   tng: ['Touch ’n Go eWallet', '#005BAA', '#fff', 'TNG'], grab: ['GrabPay', '#00B14F', '#fff', 'G'], shopee: ['ShopeePay', '#EE4D2D', '#fff', 'S'],
   boost: ['Boost', '#E1251B', '#fff', 'B'], mae: ['MAE', '#FFC83D', '#1A1A1A', 'MAE'], bigpay: ['BigPay', '#2A2A2A', '#fff', 'BP'], setel: ['Setel', '#00A19C', '#fff', 'Se'],
   asb: ['ASB', '#C8102E', '#fff', 'ASB'], th: ['Tabung Haji', '#00703C', '#fff', 'TH'], kwsp: ['EPF (KWSP)', '#003D7D', '#fff', 'EPF'],
@@ -41,7 +41,7 @@ const PROVIDERS = {
   atome: ['Atome', '#F0FF5F', '#1A1A1A', 'At'], spaylater: ['SPayLater', '#EE4D2D', '#fff', 'SP'], grabpl: ['Grab PayLater', '#00B14F', '#fff', 'GP'],
 };
 const PROVIDERS_FOR = {
-  bank: ['maybank', 'cimb', 'pbb', 'rhb', 'hlb', 'ambank', 'bimb', 'bsn', 'uob', 'ocbc', 'hsbc', 'alliance', 'affin', 'rakyat', 'muamalat', 'agro', 'scb', 'gxbank', 'aeon', 'boostbank'],
+  bank: ['maybank', 'cimb', 'pbb', 'rhb', 'hlb', 'ambank', 'bimb', 'bsn', 'uob', 'ocbc', 'hsbc', 'alliance', 'affin', 'rakyat', 'muamalat', 'agro', 'scb', 'gxbank', 'aeon', 'boostbank', 'ryt'],
   card: ['maybank', 'cimb', 'pbb', 'rhb', 'hlb', 'ambank', 'uob', 'ocbc', 'hsbc', 'alliance', 'affin', 'bimb', 'scb', 'aeon'],
   ewallet: ['tng', 'grab', 'shopee', 'boost', 'mae', 'bigpay', 'setel'],
   savings: ['asb', 'th', 'kwsp', 'versa', 'stashaway', 'maybank', 'cimb', 'pbb', 'rhb', 'hlb'],
@@ -57,16 +57,40 @@ function inkOn(hex) {
   return lum > 0.62 ? '#1A1A1A' : '#FFFFFF';
 }
 
+// Banks the user adds are settings 'bank:<id>' = { name, color, logo (small picture as a data: URL, or ''), kind }.
+// A bank added as a bank account is offered for credit cards and savings too; others only for their own kind.
+const isOwnProvider = (key) => /^bank:/.test(key || '');
+const PICTURE_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+function initialsOf(name) {
+  const words = String(name || '').trim().split(/\s+/).filter((w) => w && !/^(of|the|and|&)$/i.test(w));
+  return (words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join('') : (words[0] || '?').slice(0, 3)).toUpperCase();
+}
+function provider(key) {
+  if (!key) return null;
+  const p = PROVIDERS[key];
+  if (p) return { key, name: p[0], color: p[1], ink: p[2], initials: p[3], logo: `logos/${key}.png` };
+  const c = isOwnProvider(key) && setting(key);
+  if (!c || typeof c !== 'object') return null;
+  const color = /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : CARD_COLORS[0];
+  return { key, name: String(c.name || ''), color, ink: inkOn(color), initials: initialsOf(c.name), logo: PICTURE_URL.test(c.logo || '') ? c.logo : '', kind: c.kind, own: true };
+}
+function ownProviders(kind) {
+  return live('settings').filter((r) => isOwnProvider(r.id) && r.value && (r.value.kind === kind || (r.value.kind === 'bank' && (kind === 'card' || kind === 'savings'))))
+    .map((r) => provider(r.id)).filter(Boolean).sort((x, y) => x.name.localeCompare(y.name));
+}
+
 function accBadge(a, big) {
-  const p = a && PROVIDERS[a.provider];
-  if (p) return `<span class="logo${big ? ' big' : ''}" style="background:${p[1]};color:${p[2]}"><span>${esc(p[3])}</span></span>`;
-  return `<span class="logo emoji${big ? ' big' : ''}">${kindOf(a).emoji}</span>`;
+  const p = provider(a && a.provider);
+  const cls = 'logo' + (big ? ' big' : '');
+  if (p && p.logo) return `<span class="${cls} pic"><img src="${esc(p.logo)}" alt=""></span>`;
+  if (p) return `<span class="${cls}" style="background:${p.color};color:${p.ink}"><span>${esc(p.initials)}</span></span>`;
+  return `<span class="${cls} emoji">${kindOf(a).emoji}</span>`;
 }
 
 // An account as a bank card. In a stack only its top row shows, except for the last card.
 function cardFace(a, bal, opts) {
   opts = opts || {};
-  const color = a.color || (PROVIDERS[a.provider] || [])[1] || CARD_COLORS[0];
+  const color = a.color || (provider(a.provider) || {}).color || CARD_COLORS[0];
   const ink = inkOn(color);
   const owed = isDebt(a);
   const tags = [a.excluded ? 'Not in total' : '', a.archived ? 'Hidden' : ''].filter(Boolean);

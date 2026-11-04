@@ -166,30 +166,142 @@ function openAccountEditor(id) {
     <span class="bubble">${KINDS[k].emoji}</span><span class="grow"><span class="title ellipsis">${KINDS[k].label}</span><span class="meta ellipsis">${KINDS[k].hint}</span></span>${icon('next')}</button>`).join('')}</section></div>`, { cls: 'full' });
 }
 
-function newAccount(kind, provider) {
-  const p = PROVIDERS[provider];
-  let name = p ? p[0] : kind === 'cash' ? 'Cash' : '';
-  if (p && kind === 'card') name = p[0] + ' credit card';
-  if (p && kind === 'savings' && PROVIDERS_FOR.bank.indexOf(provider) >= 0) name = p[0] + ' fixed deposit';
+function newAccount(kind, key) {
+  const p = provider(key);
+  let name = p ? p.name : kind === 'cash' ? 'Cash' : '';
+  if (p && kind === 'card') name = p.name + ' credit card';
+  if (p && kind === 'savings' && (PROVIDERS_FOR.bank.indexOf(key) >= 0 || p.kind === 'bank')) name = p.name + ' fixed deposit';
   const n = accounts(true).length;
-  return { id: uid(), name, type: kind, provider: provider || '', opening: 0, color: p ? p[1] : CARD_COLORS[n % CARD_COLORS.length], order: n,
+  return { id: uid(), name, type: kind, provider: p ? key : '', opening: 0, color: p ? p.color : CARD_COLORS[n % CARD_COLORS.length], order: n,
     archived: false, excluded: false, last4: '', note: '' };
 }
+
+// What a kind's list is called, for "Add a bank" and so on.
+const PROVIDER_NOUN = { bank: 'bank', card: 'bank', savings: 'provider', ewallet: 'e-wallet', prepaid: 'card', paylater: 'PayLater' };
 
 actions['acc-kind'] = (el) => {
   const kind = el.dataset.v;
   if (!PROVIDERS_FOR[kind]) { closeSheet(); openAccountForm(newAccount(kind, ''), true); return; }
-  const sh = openSheet(sheetHead('Choose', { back: true }) + `<div class="sheet-body"><p class="muted">${KINDS[kind].label}</p><section class="card flush">
-    ${PROVIDERS_FOR[kind].map((k) => `<button class="item" data-a="acc-provider" data-v="${k}">${accBadge({ provider: k })}<span class="grow"><span class="title ellipsis">${esc(PROVIDERS[k][0])}</span></span>${icon('next')}</button>`).join('')}
-    <button class="item" data-a="acc-provider" data-v=""><span class="logo emoji">✏️</span><span class="grow"><span class="title">Other</span><span class="meta ellipsis">Type the name yourself</span></span>${icon('next')}</button>
-    </section></div>`, { cls: 'full' });
+  const sh = openSheet(sheetHead('Choose', { back: true }) + '<div class="sheet-body"></div>', { cls: 'full' });
   sh._kind = kind;
+  drawProviders(sh);
 };
+// The built-in list, then the user's own (with a pencil to fix them), then "add one that's not listed".
+function drawProviders(sh) {
+  const kind = sh._kind;
+  const noun = PROVIDER_NOUN[kind];
+  const row = (p) => `${accBadge({ provider: p.key })}<span class="grow"><span class="title ellipsis">${esc(p.name)}</span></span>`;
+  const own = ownProviders(kind);
+  $('.sheet-body', sh).innerHTML = `<p class="muted">${KINDS[kind].label}</p><section class="card flush">
+    ${PROVIDERS_FOR[kind].map((k) => `<button class="item" data-a="acc-provider" data-v="${k}">${row(provider(k))}${icon('next')}</button>`).join('')}
+    ${own.map((p) => `<div class="item split"><button class="pick" data-a="acc-provider" data-v="${esc(p.key)}">${row(p)}</button>
+      <button class="icon-btn plain" data-a="bank-edit" data-v="${esc(p.key)}" aria-label="Edit ${esc(p.name)}">${icon('edit')}</button></div>`).join('')}
+    <button class="item" data-a="bank-new"><span class="logo emoji">➕</span><span class="grow"><span class="title">Add another ${noun}</span>
+      <span class="meta ellipsis">Not listed? Add it with its logo</span></span>${icon('next')}</button>
+    </section>`;
+}
 actions['sheet-back'] = () => closeSheet();
 actions['acc-provider'] = (el) => {
   const kind = topSheet()._kind;
   closeAllSheets();
   openAccountForm(newAccount(kind, el.dataset.v), true);
+};
+
+// ============================== banks the user adds ==============================
+// Saved in settings as 'bank:<id>', so it syncs and shows up in the list next time.
+function openBankEditor(key, kind) {
+  const c = key ? setting(key) : null;
+  const st = c ? { key, name: c.name || '', color: provider(key).color, logo: provider(key).logo, kind: c.kind }
+    : { key: 'bank:' + uid(), name: '', color: CARD_COLORS[ownProviders(kind).length % CARD_COLORS.length], logo: '', kind };
+  const noun = PROVIDER_NOUN[st.kind] || 'bank';
+  const sh = openSheet(sheetHead(c ? `Edit ${noun}` : `Add a ${noun}`, { back: true }) + '<div class="sheet-body"></div>' +
+    `<div class="sheet-foot"><button class="btn primary block" data-a="bank-save">${c ? 'Save' : 'Add and use it'}</button></div>`, { cls: 'full' });
+  sh._st = st;
+  sh._isNew = !c;
+  sh._from = kind || st.kind; // the list it was added from
+  drawBank(sh);
+}
+function drawBank(sh) {
+  const st = sh._st;
+  const noun = PROVIDER_NOUN[st.kind] || 'bank';
+  $('.sheet-body', sh).innerHTML = `<div class="bank-preview">${bankBadge(st)}<b class="ellipsis">${esc(st.name || 'Name')}</b></div>
+    <section class="card form-rows">
+      <label class="frow"><span>Name</span><input id="bank-name" maxlength="30" placeholder="${noun === 'e-wallet' ? 'e.g. WeChat Pay' : 'e.g. Bank of China'}" value="${esc(st.name)}" data-input="bank-name"></label>
+    </section>
+    <div class="field"><span>Logo</span>
+      <div class="row-btns"><label class="btn file-pick">🖼️ ${st.logo ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="bank-logo"></label>
+        ${st.logo ? '<button class="btn" data-a="bank-logo-clear">Remove</button>' : ''}</div>
+      <span class="help">A screenshot of the bank’s app icon works well. Without one, its initials are shown.</span></div>
+    <div class="field"><span>Colour</span><div class="swatches">${CARD_COLORS.concat(CARD_COLORS.indexOf(st.color) < 0 ? [st.color] : []).map((c) => `<button class="${st.color === c ? 'on' : ''}" style="background:${c}" data-a="bank-color" data-v="${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>
+    ${sh._isNew ? '' : '<button class="btn danger block" data-a="bank-delete">Delete</button>'}`;
+}
+function bankBadge(st) {
+  if (st.logo) return `<span class="logo big pic"><img src="${esc(st.logo)}" alt=""></span>`;
+  return `<span class="logo big" style="background:${st.color};color:${inkOn(st.color)}"><span>${esc(initialsOf(st.name || '?'))}</span></span>`;
+}
+const redrawBankPreview = () => { const sh = topSheet(); $('.bank-preview', sh).innerHTML = bankBadge(sh._st) + `<b class="ellipsis">${esc(sh._st.name || 'Name')}</b>`; };
+
+// A picture becomes a small square (cropped to the middle), so it syncs quickly.
+function squarePicture(file, size) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(img.naturalWidth, img.naturalHeight);
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = size;
+      const g = cv.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, size, size);
+      g.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+      resolve(cv.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('bad picture'));
+    const reader = new FileReader(); // a data: URL, because the page's security policy doesn't allow blob: images
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = () => reject(new Error('bad picture'));
+    reader.readAsDataURL(file);
+  });
+}
+
+actions['bank-new'] = () => openBankEditor('', topSheet()._kind);
+actions['bank-edit'] = (el) => openBankEditor(el.dataset.v);
+actions['bank-name'] = (el) => { sheetState().name = el.value; redrawBankPreview(); };
+actions['bank-color'] = (el) => { sheetState().color = pick(el); redrawBankPreview(); };
+actions['bank-logo'] = async (el) => {
+  const file = el.files && el.files[0];
+  if (!file) return;
+  const sh = topSheet();
+  try { sh._st.logo = await squarePicture(file, 96); } catch (e) { return toast('That picture couldn’t be opened'); }
+  drawBank(sh);
+};
+actions['bank-logo-clear'] = () => { const sh = topSheet(); sh._st.logo = ''; drawBank(sh); };
+actions['bank-save'] = () => {
+  const sh = topSheet();
+  const st = sh._st;
+  st.name = st.name.trim();
+  if (!st.name) { shake($('#bank-name', sh)); return toast('Type its name'); }
+  const same = (p) => p.key !== st.key && p.name.toLowerCase() === st.name.toLowerCase();
+  const builtIn = (PROVIDERS_FOR[st.kind] || []).map(provider).find(same);
+  if (builtIn) return toast(`${builtIn.name} is already in the list`);
+  if (ownProviders(st.kind).some(same)) return toast('You already added that one');
+  put('settings', { id: st.key, value: { name: st.name, color: st.color, logo: st.logo, kind: st.kind } });
+  if (sh._isNew) {
+    closeAllSheets();
+    openAccountForm(newAccount(sh._from, st.key), true);
+    return;
+  }
+  closeSheet();
+  drawProviders(topSheet());
+  toast('Saved ✓');
+};
+actions['bank-delete'] = async () => {
+  const st = sheetState();
+  const users = accounts(true).filter((a) => a.provider === st.key);
+  if (users.length) return confirmSheet('It’s in use', `${users.map((a) => a.name).join(', ')} ${users.length > 1 ? 'use' : 'uses'} it. Delete or change ${users.length > 1 ? 'those accounts' : 'that account'} first.`, 'OK');
+  if (!(await confirmSheet(`Delete ${st.name}?`, 'It’s taken off the list.', 'Delete', true))) return;
+  remove('settings', st.key);
+  closeSheet();
+  drawProviders(topSheet());
 };
 
 function openAccountForm(st, isNew) {
@@ -209,8 +321,8 @@ function accountPreview(sh) {
 function drawAccount(sh) {
   const st = sh._st;
   const owed = isDebt(st);
-  const p = PROVIDERS[st.provider];
-  const colors = (p && CARD_COLORS.indexOf(p[1]) < 0 ? [p[1]] : []).concat(CARD_COLORS);
+  const p = provider(st.provider);
+  const colors = (p && CARD_COLORS.indexOf(p.color) < 0 ? [p.color] : []).concat(CARD_COLORS);
   const showLast4 = ['bank', 'card', 'savings', 'prepaid', 'ewallet'].indexOf(st.type) >= 0;
   const people = st.type === 'lent' || st.type === 'borrowed';
   $('.sheet-body', sh).innerHTML = `<div id="acc-preview">${accountPreview(sh)}</div>
