@@ -547,7 +547,8 @@ function settingsScreen() {
     <section class="card flush">${link('wallet', '💳', 'Accounts', n + ' account' + (n === 1 ? '' : 's'))}
     ${link('categories', '🏷️', 'Categories', 'Add, rename, sort')}${link('budget', '🎯', 'Budget', 'Monthly budget for each category')}
     ${link('bills', '🗓️', 'Bills', reminders().filter((r) => r.active).length + ' active')}
-    ${link('appearance', '🎨', 'Appearance', esc(Theme.label(setting('theme'))))}</section>
+    ${link('appearance', '🎨', 'Appearance', esc(Theme.label(setting('theme'))))}
+    ${link('widget', '📊', 'Home Screen widget', widgetCfg() ? 'On' : 'Off')}</section>
     ${notificationsSection(ps)}
     <section class="card flush">
       <div class="item"><span class="bubble">🙈</span><span class="grow"><span class="title">Hide amounts</span><span class="meta">Show •••• instead of money, e.g. in public</span></span>

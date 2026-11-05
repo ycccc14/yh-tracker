@@ -386,6 +386,7 @@ async function sync() {
       if (got) version++;
       await persist(true);
       if (got) emit();
+      pushWidget().catch(() => {}); // tries again after the next sync
     } catch (e) {
       syncState = { online: !e.offline, error: e.message };
       if (e.offline) scheduleSync(30000);
