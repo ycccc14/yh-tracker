@@ -8,6 +8,7 @@ let renderQueued = false;
 function render() {
   renderQueued = false;
   if (!M.token || !$('#cover').hidden) return;
+  Theme.follow(setting('theme'));
   const active = document.activeElement;
   const keep = active && active.id && $('#view').contains(active) ? { id: active.id, a: active.selectionStart, b: active.selectionEnd } : null;
   const changed = lastRoute !== view.route + '/' + view.arg;

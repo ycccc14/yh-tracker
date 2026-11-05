@@ -546,7 +546,8 @@ function settingsScreen() {
     `<section class="card"><label class="field"><span>Your name</span><input class="input" maxlength="30" value="${esc(setting('name'))}" data-change="set-name" autocomplete="given-name"></label></section>
     <section class="card flush">${link('wallet', '💳', 'Accounts', n + ' account' + (n === 1 ? '' : 's'))}
     ${link('categories', '🏷️', 'Categories', 'Add, rename, sort')}${link('budget', '🎯', 'Budget', 'Monthly budget for each category')}
-    ${link('bills', '🗓️', 'Bills', reminders().filter((r) => r.active).length + ' active')}</section>
+    ${link('bills', '🗓️', 'Bills', reminders().filter((r) => r.active).length + ' active')}
+    ${link('appearance', '🎨', 'Appearance', esc(Theme.label(setting('theme'))))}</section>
     ${notificationsSection(ps)}
     <section class="card flush">
       <div class="item"><span class="bubble">🙈</span><span class="grow"><span class="title">Hide amounts</span><span class="meta">Show •••• instead of money, e.g. in public</span></span>
@@ -591,9 +592,45 @@ function accountSection() {
     ${row('requests', '📨', 'Data requests', pending ? pending + ' waiting for you' : 'When YC asks for a copy of your data')}</section>`;
 }
 
+// ============================== appearance ==============================
+// Settings ▸ Appearance. Every choice changes the whole app straight away, and the sample shows it.
+function appearanceScreen() {
+  const t = Theme.now(); // not the saved one: a redraw mid-slide must keep the sliders where the finger is
+  const [hue, shade] = Theme.sliders(t.color);
+  const own = !Theme.presetName(t.color);
+  return screenHead('Appearance', { back: 'settings' }) +
+    `<section class="hero" aria-label="Sample"><div class="label">Sample</div><div class="big num">${money(1280)}</div>
+      <div class="trio"><div><span>Income</span><b class="num">${money(3500)}</b></div><div><span>Net</span><b class="num">${money(2220, { plus: true })}</b></div>
+      <div><span>Budget left</span><b class="num">${money(720)}</b></div></div></section>
+    <section class="card stack"><h2>Light or dark</h2>
+      <div class="seg">${Object.keys(Theme.MODES).map((m) => `<button class="${t.mode === m ? 'on' : ''}" data-a="theme-mode" data-v="${m}">${Theme.MODES[m]}</button>`).join('')}</div>
+      <p class="muted small">Auto follows your phone.</p></section>
+    <section class="card stack"><h2>Colour</h2>
+      <div class="themes">${Theme.PRESETS.map(([name, c]) => `<button class="${t.color === c ? 'on' : ''}" data-a="theme-color" data-v="${c}" aria-label="${name}">
+        <i style="--c:${c};--k:${Theme.palette(c, false)['brand-ink']}">${icon('check')}</i><span class="ellipsis">${name}</span></button>`).join('')}</div></section>
+    <section class="card stack"><div class="spread"><h2>Your own colour</h2><span id="th-own" class="muted small" ${own ? '' : 'hidden'}>In use</span></div>
+      <label class="field"><span>Colour</span><input type="range" id="th-hue" class="range hue" min="0" max="359" value="${hue}" data-input="theme-try" data-change="theme-keep" aria-label="Colour"></label>
+      <label class="field"><span>Shade</span><input type="range" id="th-shade" class="range shade" style="--h:${hue}" min="${Theme.SHADES[0]}" max="${Theme.SHADES[1]}" value="${shade}" data-input="theme-try" data-change="theme-keep" aria-label="Shade"></label></section>`;
+}
+
+function saveTheme(change) {
+  const t = Object.assign(Theme.read(setting('theme')), change);
+  put('settings', { id: 'theme', value: t });
+  Theme.set(t);
+}
+const sliderColor = () => Theme.fromSliders(+$('#th-hue').value, +$('#th-shade').value);
+actions['theme-mode'] = (el) => saveTheme({ mode: el.dataset.v });
+actions['theme-color'] = (el) => saveTheme({ color: el.dataset.v });
+// While a slider moves only the colours change: redrawing the screen would drop the finger's hold on it.
+actions['theme-try'] = () => {
+  $('#th-shade').style.setProperty('--h', $('#th-hue').value);
+  Theme.preview(Object.assign(Theme.read(setting('theme')), { color: sliderColor() }));
+};
+actions['theme-keep'] = () => saveTheme({ color: sliderColor() });
+
 const SCREENS = {
   home: homeScreen, records: recordsScreen, stats: statsScreen, wallet: walletScreen, account: accountScreen, budget: budgetScreen,
-  bills: billsScreen, settings: settingsScreen, categories: categoriesScreen,
+  bills: billsScreen, settings: settingsScreen, categories: categoriesScreen, appearance: appearanceScreen,
 };
 const ROUTE_ALIAS = { reports: 'stats', accounts: 'wallet' }; // v1 links
-const TAB_OF = { home: 'home', settings: 'home', budget: 'home', bills: 'home', categories: 'home', records: 'records', stats: 'stats', wallet: 'wallet', account: 'wallet' };
+const TAB_OF = { home: 'home', settings: 'home', appearance: 'home', budget: 'home', bills: 'home', categories: 'home', records: 'records', stats: 'stats', wallet: 'wallet', account: 'wallet' };

@@ -120,6 +120,7 @@ async function wipeLocal() {
   S = emptyState();
   M = emptyMeta();
   version++;
+  Theme.clear();
   await DB.set({ state: undefined, meta: undefined });
 }
 
