@@ -365,6 +365,27 @@ button.banner { border: 0; width: 100%; text-align: left; color: var(--ink); }
 .range.hue { --track: linear-gradient(90deg, hsl(0 62% 55%), hsl(60 62% 55%), hsl(120 62% 55%), hsl(180 62% 55%), hsl(240 62% 55%), hsl(300 62% 55%), hsl(359 62% 55%)); }
 .range.shade { --track: linear-gradient(90deg, hsl(var(--h) 62% 30%), hsl(var(--h) 62% 55%), hsl(var(--h) 62% 80%)); }
 
+/* ============================== widget designs ============================== */
+.wdesigns { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wdesign { border: 0; background: none; padding: 0; display: grid; gap: 6px; min-width: 0; text-align: left; color: var(--ink); }
+.wdesign > small { font-size: 12px; color: var(--muted); }
+.wdesign > b { font-size: 14px; }
+.wmini { aspect-ratio: 2 / 1.15; border-radius: 16px; background: #F7F4EE; color: #1E2A3A; padding: 7px; display: flex; flex-direction: column; gap: 4px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); font-size: 10px; min-width: 0; }
+.wdesign.on .wmini { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.wmini .art { flex: 1; min-height: 0; display: flex; justify-content: space-between; align-items: center; font-size: 18px; }
+.wmini .sign { background: #fff; border-radius: 4px; padding: 0 5px; font-size: 10px; font-weight: 750; }
+.wmini .blk { background: var(--c); color: var(--k); border-radius: 9px; padding: 4px 5px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; text-align: center; }
+.wmini .blk span, .wmini .blk b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.wmini.full { background: var(--c); color: var(--k); justify-content: center; padding: 10px; }
+.wmini.full b { font-size: 17px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wmini .track { height: 7px; border-radius: 9px; background: rgba(0, 0, 0, .1); overflow: hidden; }
+.wmini .track i { display: block; height: 100%; border-radius: 9px; background: var(--c); }
+.wmini .big { font-size: 15px; font-weight: 780; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wmini .row { display: flex; justify-content: space-between; gap: 4px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.wmini .btns { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.wmini .btns span { background: var(--c); color: var(--k); border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 9px; overflow: hidden; white-space: nowrap; }
+
 /* ============================== floating tab bar ============================== */
 .tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(var(--bottom) + 10px); z-index: 20; max-width: 520px; margin: 0 auto;
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; padding: 6px; border-radius: 28px;

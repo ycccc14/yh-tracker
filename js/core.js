@@ -358,6 +358,8 @@ async function sync() {
           changes[t].push({ id: r.id, updatedAt: r.updatedAt, deleted: !!r.deleted, data: key ? await Crypt.sealJson(key, r) : '' });
         }
       }
+      const taken = (M.inboxDone || []).slice(); // widget records already added here: clear them from the inbox
+      if (taken.length) changes.inbox = taken;
       if ((M.answers || []).length) await sendAnswers(); // answers to data requests go first
       const sch = reminderSchedule();
       const schText = JSON.stringify(sch);
@@ -374,6 +376,8 @@ async function sync() {
           got++;
         }
       }
+      M.inboxDone = (M.inboxDone || []).filter((a) => !taken.some((b) => b.id === a.id));
+      if ((res.changes || {}).inbox) await takeWidgetInbox(res.changes.inbox);
       M.schedSent = schText;
       if (res.requests) { M.requests = res.requests; applyAnswers(); }
       if (res.me && M.user) M.user = Object.assign({}, M.user, res.me);
