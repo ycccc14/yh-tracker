@@ -30,6 +30,13 @@ function render() {
   updateBadge();
   maybePromptRequest();
   reloadIfFree();
+  if (view.route === 'widget') paintWidgetPreviews();
+  if (wantAdd) {
+    const type = wantAdd;
+    wantAdd = '';
+    closeAllSheets();
+    if (accounts().length) openTxEditor(null, { type }); else toast('Add an account first');
+  }
 }
 
 // Redraw after data changes, at most once per frame.
@@ -39,8 +46,16 @@ onChange = () => {
   requestAnimationFrame(render);
 };
 
+// #add/expense, #add/income, #add/transfer: a widget's button. Opens that form as soon as the app is on screen.
+let wantAdd = '';
+
 function readHash() {
   let [r, a] = decodeURIComponent(location.hash.slice(1)).split('/');
+  if (r === 'add') {
+    wantAdd = ['expense', 'income', 'transfer'].includes(a) ? a : 'expense';
+    history.replaceState(null, '', location.pathname + location.search + '#home');
+    [r, a] = ['home', ''];
+  }
   r = ROUTE_ALIAS[r] || r;
   view.route = SCREENS[r] ? r : 'home';
   view.arg = a || '';
@@ -401,7 +416,8 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     return;
   }
   if (!M.token) {
-    if (isIOS() && !isStandalone()) showInstall(); else if (CFG.demo) startDemo(); else showWelcome();
+    const fromWidget = opened.has('w'); // an iPhone widget can only open Safari: go straight to signing in there
+    if (isIOS() && !isStandalone() && !fromWidget) showInstall(); else if (CFG.demo) startDemo(); else showWelcome();
     return;
   }
   if (M.pinHash) await lockApp();

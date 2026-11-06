@@ -45,7 +45,7 @@ function openTxEditor(id, preset) {
   }
   preset = preset || {};
   const st = old ? Object.assign({}, old, { expr: Calc.fromNumber(old.amount) })
-    : { type: preset.type === 'transfer' ? 'transfer' : 'expense', expr: '', accountId: preset.acc && acc(preset.acc) ? preset.acc : defaultAccount(), toAccountId: '',
+    : { type: ['income', 'transfer'].includes(preset.type) ? preset.type : 'expense', expr: '', accountId: preset.acc && acc(preset.acc) ? preset.acc : defaultAccount(), toAccountId: '',
       categoryId: '', date: Shared.isDate(preset.date) ? preset.date : today(), note: '' };
   const seg = `<div class="seg type">${[['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer']]
     .map(([v, l]) => `<button class="${st.type === v ? 'on' : ''}" data-a="tx-type" data-v="${v}">${l}</button>`).join('')}</div>`;
