@@ -204,10 +204,12 @@ function widgetScreen() {
       <button class="btn primary block" data-a="widget-copy-script">Copy script</button>
       <div class="field"><span>Tapping the widget on iPhone</span><div class="seg"><button class="${w.tap === 'app' ? 'on' : ''}" data-a="widget-tap" data-v="app">Opens My Tracker in Safari</button><button class="${w.tap === 'form' ? 'on' : ''}" data-a="widget-tap" data-v="form">Quick form</button></div></div>
       <p class="muted small">iPhones can’t open the Home Screen app from a widget. Safari has its own sign-in, so sign in there once. The quick form needs no sign-in, and its records appear when My Tracker next opens.</p></section>`;
-  const android = `<section class="card stack"><h2>Android</h2>
-      ${isAndroid() ? `<div class="row-btns">${Object.keys(WidgetArt.SIZES).map((k) => `<a class="btn primary" href="${esc(androidLink(w, k))}">Add ${WidgetArt.SIZES[k].name}</a>`).join('')}</div>
-      <p class="muted small">The first time, this downloads a small app: open the file and allow it, then tap again. After that, just tap <b>Add</b>. If you don’t see the widget, swipe to your next Home Screen page.</p>` : ''}
-      <p class="muted small">Not working? <a class="link" href="${WIDGET_APK}" target="_blank" rel="noopener">Download the widget app</a>, tap <button class="link" data-a="widget-copy-code">Copy code</button>, then open the app and paste it.</p></section>`;
+  const android = `<section class="card stack"><h2>Android</h2><ol class="steps">
+      <li><span>Download the small widget app, open the file and allow it. You only do this once.</span></li></ol>
+      <a class="btn block" href="${WIDGET_APK}" download="my-tracker-widget.apk">Download the widget app</a>
+      ${isAndroid() ? `<ol class="steps" start="2" style="counter-reset:s 1"><li><span>Tap the size you want, then <b>Add</b>. If you don’t see the widget, swipe to your next Home Screen page.</span></li></ol>
+      <div class="row-btns">${Object.keys(WidgetArt.SIZES).map((k) => `<a class="btn primary" href="${esc(androidLink(w, k))}">Add ${WidgetArt.SIZES[k].name}</a>`).join('')}</div>` : ''}
+      <p class="muted small">Not working? Tap <button class="link" data-a="widget-copy-code">Copy code</button>, then open the widget app and paste it.</p></section>`;
   const note = '<p class="muted small center-text">The code and script are like a key to these numbers, so keep them to yourself. Turning the widget off makes them stop working.</p>';
   return head + toggle + designs + look + (isIOS() ? iphone + android : android + iphone) + note;
 }
