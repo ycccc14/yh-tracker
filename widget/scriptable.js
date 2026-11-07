@@ -6,7 +6,6 @@
 
 const CODE = '__WIDGET_CODE__';
 const APP_URL = 'https://ycccc14.github.io/yh-tracker/?w=1'; // Safari: iPhones can't open the Home Screen app from a widget
-const SHORTCUT = 'My Tracker'; // what a tap runs if "A Shortcut" is chosen in My Tracker
 const STORE = 'my-tracker-widget.json';
 const TYPES = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 
@@ -224,6 +223,9 @@ function forget(store) {
   store.summary = null;
 }
 
+// "I have this one" counts only if the pictures are really here, whatever date was noted.
+const have = (store, item) => (fm.fileExists(imageFile(item, 'back')) && fm.fileExists(imageFile(item, 'text')) ? store.at[item] || '' : '');
+
 // `item` is the saved widget this one shows: the number under Parameter, or the default for its size.
 async function load(item, size) {
   if (!connected) return { message: 'Copy the script again from My Tracker.' };
@@ -231,10 +233,10 @@ async function load(item, size) {
   await sendQueue(store);
   let res = null;
   try {
-    res = await call('widgetGet', { item, have: store.at[item] || '' });
+    res = await call('widgetGet', { item, have: have(store, item) });
     if (res.ok && item !== size) { // a number that was deleted, or is for the other size: show the default
       const known = (openSealed(parts[3], res.result.data).items || {})[item];
-      if (!known || known.s !== size) { item = size; res = await call('widgetGet', { item, have: store.at[item] || '' }); }
+      if (!known || known.s !== size) { item = size; res = await call('widgetGet', { item, have: have(store, item) }); }
     }
   } catch (e) { /* offline: the last picture below */ }
   if (res && res.code === 'WIDGET_OFF') {
@@ -333,7 +335,6 @@ async function addRecord(want) {
 // ============================== the widget ==============================
 const tapUrl = (summary, add) => {
   if (summary && summary.tap === 'form') return URLScheme.forRunningScript() + '?add=' + (add || 'menu');
-  if (summary && summary.tap === 'shortcut') return `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}&input=text&text=${add ? 'add/' + add : 'home'}`;
   return APP_URL + (add ? '#add/' + add : '#home');
 };
 

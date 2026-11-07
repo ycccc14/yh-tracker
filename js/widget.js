@@ -15,6 +15,7 @@ const WIDGET_MAX = 12;
 const WIDGET_LOOK = { back: 'paper', color: '', short: false, cat: '' };
 const WIDGET_IMAGE_BYTES = 36000; // sealed, this still fits one Sheet cell
 const WIDGET_PICTURE_BYTES = 25000; // as a sealed record this stays under the server's 49,000 characters (test/server.test.js)
+const WIDGET_UPLOAD = 2; // raise it to send every picture again, with a new date
 const WIDGET_USED_DAYS = 3; // a widget fetched this recently is on a Home Screen, so its numbers are kept fresh
 let widgetScript = ''; // loaded when the screen opens: iPhones only copy straight from the tap
 const widgetPics = {}; // loaded images by address
@@ -32,7 +33,7 @@ function widgetCfg() {
     s: Object.assign({ name: 'Small', size: 's', design: validDesign('s', designs.s) }, old),
     m: Object.assign({ name: 'Wide', size: 'm', design: validDesign('m', designs.m) }, old),
   }, w.items);
-  return { t: w.t, k: w.k, tap: w.tap || 'app', next: w.next || 1, items };
+  return { t: w.t, k: w.k, tap: w.tap === 'form' ? 'form' : 'app', next: w.next || 1, items };
 }
 
 const widgetIds = (w) => Object.keys(w.items).sort((a, b) => (a < 'a' ? Number(a) : -1) - (b < 'a' ? Number(b) : -1) || b.localeCompare(a));
@@ -154,7 +155,7 @@ async function uploadWidgets(now) {
   if (!w || CFG.demo) return;
   const base = widgetData();
   const summary = JSON.stringify(widgetSummary(w));
-  const sent = M.widgetSent && M.widgetSent.t === w.t ? M.widgetSent : { t: w.t, summary: 0, items: {} };
+  const sent = M.widgetSent && M.widgetSent.t === w.t && M.widgetSent.v === WIDGET_UPLOAD ? M.widgetSent : { t: w.t, summary: 0, items: {} };
   const hashes = {};
   widgetIds(w).forEach((id) => { hashes[id] = itemHashes(id, w.items[id], base); });
   const changed = widgetIds(w).filter((id) => !sent.items[id] || sent.items[id].l !== hashes[id].l || sent.items[id].n !== hashes[id].n);
@@ -175,7 +176,7 @@ async function uploadWidgets(now) {
   if (rows.length || gone.length) await api('widgetImgs', { t: w.t, rows, drop: gone });
   const items = {};
   widgetIds(w).forEach((id) => { items[id] = go.includes(id) ? hashes[id] : sent.items[id] || hashes[id]; });
-  M.widgetSent = { t: w.t, summary: hashText(summary), items };
+  M.widgetSent = { t: w.t, v: WIDGET_UPLOAD, summary: hashText(summary), items };
   persist();
   if (Native) Native.refreshWidgets(); // the Home Screen shows it now, not at the next half hour
 }
@@ -290,7 +291,7 @@ function widgetScreen() {
       <span class="meta">${CFG.demo ? 'Not in the preview' : 'Your money on the Home Screen. Anyone who sees your Home Screen sees these numbers.'}</span></span>
       <label class="switch"><input type="checkbox" data-change="widget-toggle" ${w ? 'checked' : ''} ${CFG.demo ? 'disabled' : ''} aria-label="Widget"><i></i></label></div></section>`;
   if (!w) return head + toggle;
-  const taps = [['app', 'Safari'], ['form', 'Quick form'], ['shortcut', 'A Shortcut']];
+  const taps = [['app', 'Safari'], ['form', 'Quick form']];
   const iphone = `<section class="card stack"><h2>iPhone</h2><ol class="steps">
       <li><span>Get the free app <a class="link" href="${SCRIPTABLE_APP}" target="_blank" rel="noopener">Scriptable</a> from the App Store.</span></li>
       <li><span>Tap <b>Copy script</b> below.</span></li>
@@ -300,8 +301,7 @@ function widgetScreen() {
       <button class="btn primary block" data-a="widget-copy-script">Copy script</button>
       <div class="field"><span>Tapping the widget on iPhone</span><div class="chips">${taps.map(([v, name]) => `<button class="chip ${w.tap === v ? 'on' : ''}" data-a="widget-tap" data-v="${v}">${name}</button>`).join('')}</div></div>
       <p class="muted small">${{ app: 'iPhones can’t open the Home Screen app from a widget, so this opens My Tracker in Safari, which has its own sign-in.',
-    form: 'A quick form with no sign-in. Its records appear when My Tracker next opens.',
-    shortcut: 'Runs the Shortcut you name <b>My Tracker</b>, so you decide what a tap does. It receives the page, for example add/expense.' }[w.tap]}</p>
+    form: 'A quick form with no sign-in. Its records appear when My Tracker next opens.' }[w.tap]}</p>
       <p class="muted small">Add records faster: make a Shortcut with <b>Open URLs</b> and <b>scriptable:///run/My%20Tracker?add=expense</b>, then put it on the Action Button, Back Tap or Siri.</p></section>`;
   const android = `<section class="card stack"><h2>Android</h2><ol class="steps">
       <li><span>Download the My Tracker app, open the file and allow it. The widgets come with it.</span></li>
@@ -398,6 +398,7 @@ actions['widget-picture'] = async (el) => {
 actions['widget-picture-clear'] = () => put('settings', { id: 'widgetpic:' + view.arg, value: 'none' });
 actions['widget-pin'] = async (el) => {
   const id = el.dataset.v;
+  if (!Native.setIcon) { toast('Please update the Android app first: get it from Settings ▸ Home Screen widget in your browser.', 5000); return; }
   el.disabled = true;
   try {
     await pushWidget(id); // the newest look and numbers are there when it lands on the Home Screen

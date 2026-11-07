@@ -36,14 +36,14 @@ function tellNative() {
   nativeTold = code + reminders + icon;
   Native.setWidget(code);
   Native.setReminders(reminders);
-  Native.setIcon(icon);
+  if (Native.setIcon) Native.setIcon(icon); // not in the first Android app
 }
 
 function nativeSignedOut() {
   if (!Native) return;
   nativeTold = '';
   Native.signedOut();
-  Native.setIcon('Pistachio');
+  if (Native.setIcon) Native.setIcon('Pistachio');
 }
 
 function nativeAskNotifications() {
