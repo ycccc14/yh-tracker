@@ -270,7 +270,7 @@ function widgetEditor(w, id) {
       <label class="field"><span>Name</span><input class="input" maxlength="20" value="${esc(it.name)}" data-change="widget-name"></label>
       <div class="field"><span>Background</span><div class="chips">${WidgetArt.BACKS.map(([b, name]) => `<button class="chip ${it.back === b ? 'on' : ''}" data-a="widget-back" data-v="${b}">${name}</button>`).join('')}</div>
         ${it.back === 'clear' ? '<p class="muted small">Only white words and numbers, so they stay readable on a tinted or clear iPhone Home Screen.</p>' : isIOS() ? '<p class="muted small">Tinted or clear Home Screen? Choose <b>Clear</b>.</p>' : ''}</div>
-      ${it.back === 'picture' ? `<div class="pic-btns"><label class="btn file-pick">🖼️ ${itemPic(id) ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="widget-picture"></label>
+      ${it.back === 'picture' ? `<div class="pic-btns"><button class="btn file-pick" data-a="widget-pick">🖼️ ${itemPic(id) ? 'Change picture' : 'Choose a picture'}</button>
         ${itemPic(id) ? '<button class="btn" data-a="widget-picture-clear">Remove</button>' : ''}</div>` : ''}
       ${it.back === 'clear' ? '' : `<div class="field"><span>Colour</span><div class="swatches"><button class="${it.color ? '' : 'on'}" style="background:${Theme.read(setting('theme')).color}" data-a="widget-color" data-v="" aria-label="Same as the app"></button>
         ${Theme.PRESETS.map(([name, c]) => `<button class="${it.color === c ? 'on' : ''}" style="background:${c}" data-a="widget-color" data-v="${c}" aria-label="${name}"></button>`).join('')}</div></div>`}
@@ -386,14 +386,25 @@ actions['widget-cat'] = (el) => saveItem(view.arg, { cat: el.value });
 actions['widget-short'] = (el) => saveItem(view.arg, { short: el.checked });
 actions['widget-name'] = (el) => saveItem(view.arg, { name: shortName(el.value.trim()) || widgetCfg().items[view.arg].name });
 actions['widget-tap'] = (el) => saveWidgetCfg({ tap: el.dataset.v });
-actions['widget-picture'] = async (el) => {
-  const file = el.files && el.files[0];
+// One file input for the whole app, outside the screen. Choosing a photo sends the page to the background, coming back
+// redraws the screen, and an input that was redrawn away never reports the photo: nothing happens, with no error.
+const picturePicker = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', id: 'widget-file' });
+picturePicker.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0';
+document.body.appendChild(picturePicker);
+let pictureFor = '';
+picturePicker.addEventListener('change', async () => {
+  const file = picturePicker.files[0];
   if (!file) return;
   try {
-    put('settings', { id: 'widgetpic:' + view.arg, value: await widgetPicture(file) });
+    put('settings', { id: 'widgetpic:' + pictureFor, value: await widgetPicture(file) });
   } catch (e) {
     toast('That picture couldn’t be opened. Try another one.');
   }
+  picturePicker.value = ''; // the same photo again still counts as a choice
+});
+actions['widget-pick'] = () => {
+  pictureFor = view.arg;
+  picturePicker.click();
 };
 actions['widget-picture-clear'] = () => put('settings', { id: 'widgetpic:' + view.arg, value: 'none' });
 actions['widget-pin'] = async (el) => {
