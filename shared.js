@@ -104,6 +104,30 @@ var Shared = (function () {
     return out;
   }
 
+  function money(v, cur) {
+    return (cur || 'RM') + ' ' + Number(v).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function dueWords(days) {
+    if (days < 0) return 'overdue ' + -days + (days === -1 ? ' day' : ' days');
+    return 'due ' + relDays(days);
+  }
+
+  // The notification for the bills open on `today`: {title, body, count}, or null if none are.
+  function billNotice(reminders, today, cur) {
+    var list = billsNeedingAttention(reminders, today);
+    if (!list.length) return null;
+    if (list.length === 1) {
+      var x = list[0];
+      return { title: '🔔 ' + x.rem.title + ' ' + dueWords(x.days), body: (x.rem.amount ? money(x.rem.amount, cur) + ' · ' : '') + 'Tap to mark it as paid.', count: 1 };
+    }
+    return {
+      title: '🔔 ' + list.length + ' bills need attention',
+      body: list.slice(0, 4).map(function (b) { return b.rem.title + ' (' + dueWords(b.days) + ')'; }).join(', ') + (list.length > 4 ? '…' : ''),
+      count: list.length,
+    };
+  }
+
   return {
     REPEATS: REPEATS,
     pad: pad,
@@ -117,6 +141,7 @@ var Shared = (function () {
     notifyMoments: notifyMoments,
     billStatus: billStatus,
     billsNeedingAttention: billsNeedingAttention,
+    billNotice: billNotice,
     relDays: relDays,
   };
 })();

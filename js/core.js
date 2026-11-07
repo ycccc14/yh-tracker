@@ -121,6 +121,7 @@ async function wipeLocal() {
   M = emptyMeta();
   version++;
   Theme.clear();
+  nativeSignedOut();
   await DB.set({ state: undefined, meta: undefined });
 }
 
@@ -342,6 +343,7 @@ function scheduleSync(ms) {
 async function sync() {
   if (!M.token) return;
   if (syncing) { syncAgain = true; return syncing; }
+  tellNative(); // works offline too, so a bill just paid never rings
   syncing = (async () => {
     const sent = {};
     const changes = {};
@@ -390,6 +392,7 @@ async function sync() {
       if (got) version++;
       await persist(true);
       if (got) emit();
+      tellNative();
       pushWidget().catch(() => {}); // tries again after the next sync
     } catch (e) {
       syncState = { online: !e.offline, error: e.message };
@@ -425,11 +428,15 @@ function autoRecordBills() {
 
 // ============================== notifications ==============================
 
-const isStandalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const isStandalone = () => !!Native || window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 // 'unsupported' | 'install' (iPhone, but not opened from the Home Screen) | 'default' | 'denied' | 'on'
 function pushState() {
+  if (Native) {
+    const st = Native.notifications();
+    return st === 'denied' ? 'denied' : st === 'granted' && M.pushOn ? 'on' : 'default';
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return isIOS() && !isStandalone() ? 'install' : 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   if (Notification.permission === 'granted' && M.pushOn) return 'on';
@@ -442,6 +449,13 @@ function keyBytes(b64) {
 }
 
 async function enablePush() {
+  if (Native) {
+    if (await nativeAskNotifications() !== 'granted') throw new Error('Notifications are blocked. Turn them on in Android Settings ▸ Apps ▸ My Tracker ▸ Notifications.');
+    M.pushOn = true;
+    persist();
+    tellNative();
+    return;
+  }
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked. Turn them on in iPhone Settings ▸ Notifications ▸ My Tracker.' : 'Notifications weren’t allowed.');
   const reg = await navigator.serviceWorker.ready;
@@ -462,6 +476,12 @@ async function enablePush() {
 }
 
 async function disablePush() {
+  if (Native) {
+    M.pushOn = false;
+    persist();
+    tellNative();
+    return;
+  }
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -474,7 +494,7 @@ async function disablePush() {
 
 // Once a day, make sure the server still has this phone's (possibly renewed) push address.
 async function refreshPush() {
-  if (!M.pushOn || Date.now() - (M.pushChecked || 0) < 86400000 || pushState() !== 'on') return;
+  if (Native || !M.pushOn || Date.now() - (M.pushChecked || 0) < 86400000 || pushState() !== 'on') return;
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -486,6 +506,7 @@ async function refreshPush() {
 }
 
 async function testPush() {
+  if (Native) { Native.testNotification(); return; }
   M.testPushAt = Date.now(); // the service worker shows "it works" instead of bills for a few minutes
   await persist(true);
   const r = await api('testPush');

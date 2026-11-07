@@ -1,13 +1,12 @@
-// Home Screen widgets. A web app can't make one itself, so two small helpers show it: a Scriptable script on
-// iPhone (web/widget/scriptable.js) and a tiny Android app (android-widget/). This app paints the finished
+// Home Screen widgets. A web app can't make one itself, so they are shown by a Scriptable script on iPhone
+// (web/widget/scriptable.js) and by the Android app (android-app/), which has them built in. This app paints the finished
 // widgets (widget-art.js) and, after each sync, seals the pictures and a short summary with the widget key.
 // The server can't open them, and the widget's token can fetch only those, never the records.
 // settings 'widget' = { t: token, k: key, designs: {s, m, l}, back, color, short, cat, tap };
 // settings 'widgetpic' = the background picture, so a second phone paints the same widgets.
 'use strict';
 
-const WIDGET_APK = 'widget/my-tracker-widget.apk';
-const WIDGET_PACKAGE = 'com.ycccc14.mytracker.widget';
+const ANDROID_APK = 'android/My-Tracker.apk';
 const SCRIPTABLE_APP = 'https://apps.apple.com/app/scriptable/id1405459188';
 const WIDGET_DEFAULTS = { designs: { s: 'balance', m: 'classic', l: 'compare' }, back: 'paper', color: '', short: false, cat: '', tap: 'app' };
 const WIDGET_IMAGE_BYTES = 36000; // sealed, this still fits one Sheet cell
@@ -114,6 +113,7 @@ async function pushWidget() {
   }
   M.widgetSent = state;
   persist();
+  if (Native) Native.refreshWidgets(); // the Home Screen shows it now, not at the next half hour
 }
 
 // A widget's entry is outside input: only known types, accounts and categories become a record.
@@ -152,13 +152,6 @@ async function takeWidgetInbox(rows) {
 function loadWidgetScript() {
   if (widgetScript) return;
   fetch('widget/scriptable.js').then((r) => (r.ok ? r.text() : '')).then((t) => { widgetScript = t; }).catch(() => {});
-}
-
-// Opens the Android widget app with the code, or downloads the app if it isn't installed yet.
-function androidLink(w, size) {
-  const code = Crypt.b64(new TextEncoder().encode(widgetCode(w)));
-  const fallback = encodeURIComponent(new URL(WIDGET_APK, location.href).href);
-  return `intent://connect/${code}?size=${size}#Intent;scheme=mytrackerwidget;package=${WIDGET_PACKAGE};S.browser_fallback_url=${fallback};end`;
 }
 
 // The previews are the same drawing as the real thing, painted once the screen is on the page.
@@ -205,12 +198,15 @@ function widgetScreen() {
       <div class="field"><span>Tapping the widget on iPhone</span><div class="seg"><button class="${w.tap === 'app' ? 'on' : ''}" data-a="widget-tap" data-v="app">Opens My Tracker in Safari</button><button class="${w.tap === 'form' ? 'on' : ''}" data-a="widget-tap" data-v="form">Quick form</button></div></div>
       <p class="muted small">iPhones can’t open the Home Screen app from a widget. Safari has its own sign-in, so sign in there once. The quick form needs no sign-in, and its records appear when My Tracker next opens.</p></section>`;
   const android = `<section class="card stack"><h2>Android</h2><ol class="steps">
-      <li><span>Download the small widget app, open the file and allow it. You only do this once.</span></li></ol>
-      <a class="btn block" href="${WIDGET_APK}" download="my-tracker-widget.apk">Download the widget app</a>
-      ${isAndroid() ? `<ol class="steps" start="2" style="counter-reset:s 1"><li><span>Tap the size you want, then <b>Add</b>. If you don’t see the widget, swipe to your next Home Screen page.</span></li></ol>
-      <div class="row-btns">${Object.keys(WidgetArt.SIZES).map((k) => `<a class="btn primary" href="${esc(androidLink(w, k))}">Add ${WidgetArt.SIZES[k].name}</a>`).join('')}</div>` : ''}
-      <p class="muted small">Not working? Tap <button class="link" data-a="widget-copy-code">Copy code</button>, then open the widget app and paste it.</p></section>`;
-  const note = '<p class="muted small center-text">The code and script are like a key to these numbers, so keep them to yourself. Turning the widget off makes them stop working.</p>';
+      <li><span>Download the My Tracker app, open the file and allow it. The widgets come with it.</span></li>
+      <li><span>Sign in there. Your records and widget settings come back by themselves.</span></li>
+      <li><span>Open this screen in the app and tap the size you want.</span></li></ol>
+      <a class="btn block" href="${ANDROID_APK}" download="My-Tracker.apk">Download My Tracker for Android</a></section>`;
+  const add = `<section class="card stack"><h2>Add to your Home Screen</h2>
+      <div class="row-btns">${Object.keys(WidgetArt.SIZES).map((k) => `<button class="btn primary" data-a="widget-pin" data-v="${k}">Add ${WidgetArt.SIZES[k].name}</button>`).join('')}</div>
+      <p class="muted small">If you don’t see it, swipe to your next Home Screen page. You can also touch and hold your Home Screen, tap <b>Widgets</b> and pick <b>My Tracker</b>.</p></section>`;
+  if (Native) return head + toggle + add + designs + look;
+  const note = '<p class="muted small center-text">The script is like a key to these numbers, so keep it to yourself. Turning the widget off makes it stop working.</p>';
   return head + toggle + designs + look + (isIOS() ? iphone + android : android + iphone) + note;
 }
 
@@ -249,7 +245,7 @@ function widgetPicture(file) {
   });
 }
 
-actions['widget-copy-code'] = () => copyText(widgetCode(widgetCfg()), 'Code copied ✓');
+actions['widget-pin'] = (el) => { if (!Native.pinWidget(el.dataset.v)) toast('Touch and hold your Home Screen, tap Widgets, then pick My Tracker.', 4500); };
 actions['widget-copy-script'] = () => {
   if (!widgetScript) { loadWidgetScript(); toast('Still loading. Tap again in a moment.'); return; }
   copyText(widgetScript.replace('__WIDGET_CODE__', widgetCode(widgetCfg())), 'Script copied ✓');

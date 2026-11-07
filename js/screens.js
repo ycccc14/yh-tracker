@@ -475,7 +475,7 @@ function pushBanner() {
   const text = {
     install: '🔔 To get bill notifications, open My Tracker from your Home Screen (Share ▸ Add to Home Screen).',
     unsupported: '🔔 This phone can’t show notifications from this app. Updating to iOS 16.4 or later fixes it.',
-    denied: '🔕 Notifications are blocked. Open iPhone Settings ▸ Notifications ▸ My Tracker and turn on Allow Notifications.',
+    denied: Native ? '🔕 Notifications are blocked. Open Android Settings ▸ Apps ▸ My Tracker ▸ Notifications and turn them on.' : '🔕 Notifications are blocked. Open iPhone Settings ▸ Notifications ▸ My Tracker and turn on Allow Notifications.',
     default: '🔔 Get a notification on your phone before each bill is due.',
   }[st];
   return `<div class="banner ${st === 'denied' ? 'warn' : ''}"><p>${text}</p>${st === 'default' ? '<button class="btn primary block" data-a="push-on">Turn on notifications</button>' : ''}</div>`;
@@ -571,7 +571,7 @@ function notificationsSection(ps) {
   const why = {
     on: 'Bill reminders and data requests',
     default: 'Off',
-    denied: 'Blocked: iPhone Settings ▸ Notifications ▸ My Tracker',
+    denied: Native ? 'Blocked: Android Settings ▸ Apps ▸ My Tracker' : 'Blocked: iPhone Settings ▸ Notifications ▸ My Tracker',
     install: 'Open My Tracker from your Home Screen to use them',
     unsupported: 'Needs iOS 16.4 or later',
   }[ps];

@@ -168,7 +168,9 @@ actions.export = async () => {
     rows.push([t.date, t.type, Number(t.amount).toFixed(2)].map((v) => csvCell(v)).concat(
       [name(t.accountId), name(t.toAccountId), name(t.categoryId), t.note].map((v) => csvCell(v, true))).join(','));
   });
-  const file = new File(['﻿' + rows.join('\r\n')], `My-Tracker-${today()}.csv`, { type: 'text/csv' });
+  const text = '﻿' + rows.join('\r\n');
+  if (Native) { Native.saveFile(`My-Tracker-${today()}.csv`, 'text/csv', text); return; }
+  const file = new File([text], `My-Tracker-${today()}.csv`, { type: 'text/csv' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'My Tracker records' }); return; }
   } catch (e) {

@@ -132,6 +132,7 @@ const Theme = (() => {
     TOKENS.forEach((k) => { if (own) root.style.setProperty('--' + k, own[k]); else root.style.removeProperty('--' + k); });
     const bar = own ? own.bg : dark ? '#121611' : '#F4F8F0'; // the phone's status bar
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bar));
+    if (window.MyTrackerApp) window.MyTrackerApp.setBars(bar, dark); // the Android app paints its own bars
   }
   function remember(t) {
     try {
