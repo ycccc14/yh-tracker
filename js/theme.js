@@ -124,6 +124,53 @@ const Theme = (() => {
   let current = read();
   let previewing = false;
 
+  // ---- the app's icon, in any colour ----
+  const key = (color) => (PRESETS.find(([, c]) => c === color) || [''])[0].toLowerCase();
+  // The preset closest in colour: Android's Home Screen icons are made in advance.
+  function nearest(color) {
+    const [h, s] = toHsl(color);
+    const gap = (c) => {
+      const [ch, cs] = toHsl(c);
+      if (s < 20 || cs < 20) return s < 20 && cs < 20 ? 0 : 400;
+      const d = Math.abs(h - ch);
+      return Math.min(d, 360 - d);
+    };
+    return PRESETS.reduce((best, p) => (gap(p[1]) < gap(best[1]) ? p : best))[0];
+  }
+  // The same drawing as tools/make-icons.py, for the user's own colour. Presets are ready-made files.
+  const drawn = {};
+  function drawIcon(color) {
+    if (drawn[color]) return drawn[color];
+    const [h, s, l] = toHsl(color);
+    const c = document.createElement('canvas');
+    c.width = c.height = 180;
+    const g = c.getContext('2d');
+    const u = 180 / 1024;
+    const fill = g.createLinearGradient(0, 0, 0, 180);
+    fill.addColorStop(0, hsl(h, s, l + 8));
+    fill.addColorStop(1, hsl(h, s, l - 12));
+    g.fillStyle = fill;
+    g.fillRect(0, 0, 180, 180);
+    const box = (x1, y1, x2, y2, r, color2) => { g.fillStyle = color2; g.beginPath(); g.roundRect(x1 * u, y1 * u, (x2 - x1) * u, (y2 - y1) * u, r * u); g.fill(); };
+    box(212, 304, 812, 778, 86, 'rgba(0, 0, 0, .16)');
+    box(212, 286, 812, 760, 86, '#FFFFFF');
+    box(300, 222, 700, 330, 40, 'rgba(255, 255, 255, .78)');
+    box(640, 448, 852, 598, 60, hsl(h, s, 90));
+    g.fillStyle = hsl(h, s, 30);
+    g.beginPath();
+    g.arc(746 * u, 523 * u, 32 * u, 0, Math.PI * 2);
+    g.fill();
+    drawn[color] = c.toDataURL('image/png');
+    return drawn[color];
+  }
+  function iconUrl(color) {
+    const c = color || current.color;
+    if (c === DEFAULT) return 'icons/icon-180.png';
+    return key(c) ? `icons/c-${key(c)}.png` : drawIcon(c);
+  }
+  // A link from Appearance carries the colour, so "Add to Home Screen" in Safari takes that icon.
+  const asked = browser ? /[?&]icon=([0-9a-f]{6})/i.exec(location.search) : null;
+
   function paint() {
     const root = document.documentElement;
     const dark = current.mode === 'dark' || (current.mode === 'auto' && !!systemDark && systemDark.matches);
@@ -133,6 +180,8 @@ const Theme = (() => {
     const bar = own ? own.bg : dark ? '#121611' : '#F4F8F0'; // the phone's status bar
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bar));
     if (window.MyTrackerApp) window.MyTrackerApp.setBars(bar, dark); // the Android app paints its own bars
+    const icon = iconUrl(asked ? '#' + asked[1].toUpperCase() : current.color);
+    document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((l) => l.setAttribute('href', icon));
   }
   function remember(t) {
     try {
@@ -170,6 +219,6 @@ const Theme = (() => {
     if (systemDark && systemDark.addEventListener) systemDark.addEventListener('change', paint);
   }
 
-  return { DEFAULT, PRESETS, MODES, SHADES, palette, contrast, read, label, presetName, fromSliders, sliders, now: () => current, preview, set, follow, clear };
+  return { DEFAULT, PRESETS, MODES, SHADES, palette, contrast, read, label, presetName, nearest, iconUrl, fromSliders, sliders, now: () => current, preview, set, follow, clear };
 })();
 if (typeof module !== 'undefined') module.exports = Theme;

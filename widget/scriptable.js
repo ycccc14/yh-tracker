@@ -6,6 +6,7 @@
 
 const CODE = '__WIDGET_CODE__';
 const APP_URL = 'https://ycccc14.github.io/yh-tracker/?w=1'; // Safari: iPhones can't open the Home Screen app from a widget
+const SHORTCUT = 'My Tracker'; // what a tap runs if "A Shortcut" is chosen in My Tracker
 const STORE = 'my-tracker-widget.json';
 const TYPES = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 
@@ -185,12 +186,13 @@ const fm = FileManager.local();
 const inDocs = (name) => fm.joinPath(fm.documentsDirectory(), name);
 const storeFile = inDocs(STORE);
 const emptyStore = () => ({ summary: null, at: {}, queue: [] });
+const saveBytes = (file, bytes) => fm.write(file, Data.fromBase64String(toB64(bytes).replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((3 - bytes.length % 3) % 3)));
 
 function readStore() {
   try { return fm.fileExists(storeFile) ? Object.assign(emptyStore(), JSON.parse(fm.readString(storeFile))) : emptyStore(); } catch (e) { return emptyStore(); }
 }
 const writeStore = (store) => fm.writeString(storeFile, JSON.stringify(store));
-const imageFile = (size) => inDocs(`my-tracker-${size}.img`);
+const imageFile = (item, layer) => inDocs(`my-tracker-${item}-${layer}.img`);
 
 async function call(fn, arg) {
   const req = new Request(parts[1]);
@@ -217,17 +219,24 @@ async function sendQueue(store) {
 }
 
 function forget(store) {
-  ['s', 'm', 'l'].forEach((size) => { if (fm.fileExists(imageFile(size))) fm.remove(imageFile(size)); });
+  Object.keys(store.at).forEach((item) => ['back', 'text'].forEach((layer) => { if (fm.fileExists(imageFile(item, layer))) fm.remove(imageFile(item, layer)); }));
   if (fm.fileExists(storeFile)) fm.remove(storeFile);
   store.summary = null;
 }
 
-async function load(size) {
+// `item` is the saved widget this one shows: the number under Parameter, or the default for its size.
+async function load(item, size) {
   if (!connected) return { message: 'Copy the script again from My Tracker.' };
   const store = readStore();
   await sendQueue(store);
   let res = null;
-  try { res = await call('widgetGet', { size, have: store.at[size] || '' }); } catch (e) { /* offline: the last picture below */ }
+  try {
+    res = await call('widgetGet', { item, have: store.at[item] || '' });
+    if (res.ok && item !== size) { // a number that was deleted, or is for the other size: show the default
+      const known = (openSealed(parts[3], res.result.data).items || {})[item];
+      if (!known || known.s !== size) { item = size; res = await call('widgetGet', { item, have: store.at[item] || '' }); }
+    }
+  } catch (e) { /* offline: the last picture below */ }
   if (res && res.code === 'WIDGET_OFF') {
     forget(store);
     return { message: 'The widget is off in My Tracker.' };
@@ -236,16 +245,16 @@ async function load(size) {
     try {
       store.summary = openSealed(parts[3], res.result.data);
       if (res.result.img) {
-        const bytes = openBytes(parts[3], res.result.img);
-        fm.write(imageFile(size), Data.fromBase64String(toB64(bytes).replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((3 - bytes.length % 3) % 3)));
-        store.at[size] = res.result.imgAt;
+        saveBytes(imageFile(item, 'back'), openBytes(parts[3], res.result.img));
+        saveBytes(imageFile(item, 'text'), openBytes(parts[3], res.result.text));
+        store.at[item] = res.result.imgAt;
       }
     } catch (e) {
       return { message: 'Copy the script again from My Tracker.' };
     }
   }
   writeStore(store);
-  if (fm.fileExists(imageFile(size))) return { image: Image.fromFile(imageFile(size)), summary: store.summary };
+  if (fm.fileExists(imageFile(item, 'back'))) return { item, image: Image.fromFile(imageFile(item, 'back')), words: Image.fromFile(imageFile(item, 'text')), summary: store.summary };
   return { message: res && res.ok ? 'Open My Tracker once to draw this widget.' : 'Waiting for the internet.' };
 }
 
@@ -324,6 +333,7 @@ async function addRecord(want) {
 // ============================== the widget ==============================
 const tapUrl = (summary, add) => {
   if (summary && summary.tap === 'form') return URLScheme.forRunningScript() + '?add=' + (add || 'menu');
+  if (summary && summary.tap === 'shortcut') return `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}&input=text&text=${add ? 'add/' + add : 'home'}`;
   return APP_URL + (add ? '#add/' + add : '#home');
 };
 
@@ -340,12 +350,18 @@ function draw(state, size) {
     note.textColor = new Color('#1E2A3A');
     return w;
   }
-  w.backgroundImage = state.image;
-  const quick = state.summary && state.summary.quick && state.summary.quick[size];
-  if (quick && size !== 's') { // the painted buttons sit in the lower 55%, in three equal columns
-    w.addSpacer();
-    const row = w.addStack();
-    row.size = new Size(0, size === 'l' ? 180 : 86);
+  // Two layers. A tinted or clear Home Screen removes the background and recolours what's left, so the words have
+  // to be a see-through picture of their own: only their shapes stay, in the Home Screen's colour.
+  const s = state.summary || {};
+  const clear = (s.items || {})[state.item] && s.items[state.item].c;
+  if (clear) w.backgroundColor = new Color('#17191E'); else w.backgroundImage = state.image;
+  const words = w.addStack();
+  words.layoutVertically();
+  words.backgroundImage = state.words;
+  words.addSpacer();
+  if (s.quick && s.quick[state.item] && size !== 's') { // the painted buttons sit in the lower 55%, in three equal columns
+    const row = words.addStack();
+    row.size = new Size(0, 86);
     ['expense', 'income', 'transfer'].forEach((type) => {
       const b = row.addStack();
       b.size = new Size(0, 0);
@@ -353,7 +369,8 @@ function draw(state, size) {
       b.addSpacer();
     });
   } else {
-    w.addSpacer();
+    const row = words.addStack();
+    row.addSpacer(); // keeps the words layer as wide as the widget
   }
   return w;
 }
@@ -362,8 +379,9 @@ const want = (args.queryParameters || {}).add;
 if (want && !config.runsInWidget) {
   await addRecord(want);
 } else {
-  const size = { small: 's', medium: 'm', large: 'l' }[config.widgetFamily] || 'm';
-  const widget = draw(await load(size), size);
+  const size = config.widgetFamily === 'small' ? 's' : 'm'; // large and others show the Wide picture
+  const number = String(args.widgetParameter || '').trim();
+  const widget = draw(await load(/^\d{1,3}$/.test(number) ? number : size, size), size);
   if (config.runsInWidget) Script.setWidget(widget); else await widget.presentMedium();
 }
 Script.complete();

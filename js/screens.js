@@ -595,6 +595,24 @@ function accountSection() {
 
 // ============================== appearance ==============================
 // Settings ▸ Appearance. Every choice changes the whole app straight away, and the sample shows it.
+// The icon on the phone's Home Screen. Android swaps it; an iPhone keeps the one it was added with, so the only
+// way is adding it again from a link that carries the colour. (Each copy on an iPhone has its own sign-in.)
+function iconSection(color) {
+  if (Native) {
+    const near = Theme.nearest(color);
+    return `<section class="card stack"><div class="row"><img class="mini-icon" src="${Theme.iconUrl(color)}" alt=""><h2 class="grow">App icon</h2></div>
+      <p class="muted small">${Theme.presetName(color) ? 'The icon on your Home Screen follows this colour.' : `Your own colour can’t be an Android icon, so the icon uses the closest one: ${near}.`}</p></section>`;
+  }
+  if (!isIOS()) return '';
+  return `<section class="card stack"><div class="row"><img class="mini-icon" src="${Theme.iconUrl(color)}" alt=""><h2 class="grow">App icon</h2></div>
+    <p class="muted small">An iPhone keeps the icon the app had when it was added. To get this colour:</p>
+    <ol class="steps"><li><span>Tap <b>Copy link</b>, then paste it into Safari.</span></li>
+      <li><span>Tap <b>Share ▸ Add to Home Screen</b>.</span></li>
+      <li><span>Open the new icon and sign in. Your records come back. Then delete the old icon.</span></li></ol>
+    <button class="btn block" data-a="theme-icon-link">Copy link</button></section>`;
+}
+actions['theme-icon-link'] = () => copyText(`${location.origin}${location.pathname}?icon=${Theme.now().color.slice(1)}`, 'Link copied ✓');
+
 function appearanceScreen() {
   const t = Theme.now(); // not the saved one: a redraw mid-slide must keep the sliders where the finger is
   const [hue, shade] = Theme.sliders(t.color);
@@ -611,7 +629,7 @@ function appearanceScreen() {
         <i style="--c:${c};--k:${Theme.palette(c, false)['brand-ink']}">${icon('check')}</i><span class="ellipsis">${name}</span></button>`).join('')}</div></section>
     <section class="card stack"><div class="spread"><h2>Your own colour</h2><span id="th-own" class="muted small" ${own ? '' : 'hidden'}>In use</span></div>
       <label class="field"><span>Colour</span><input type="range" id="th-hue" class="range hue" min="0" max="359" value="${hue}" data-input="theme-try" data-change="theme-keep" aria-label="Colour"></label>
-      <label class="field"><span>Shade</span><input type="range" id="th-shade" class="range shade" style="--h:${hue}" min="${Theme.SHADES[0]}" max="${Theme.SHADES[1]}" value="${shade}" data-input="theme-try" data-change="theme-keep" aria-label="Shade"></label></section>`;
+      <label class="field"><span>Shade</span><input type="range" id="th-shade" class="range shade" style="--h:${hue}" min="${Theme.SHADES[0]}" max="${Theme.SHADES[1]}" value="${shade}" data-input="theme-try" data-change="theme-keep" aria-label="Shade"></label></section>` + iconSection(t.color);
 }
 
 function saveTheme(change) {

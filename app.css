@@ -366,12 +366,27 @@ button.banner { border: 0; width: 100%; text-align: left; color: var(--ink); }
 .range.shade { --track: linear-gradient(90deg, hsl(var(--h) 62% 30%), hsl(var(--h) 62% 55%), hsl(var(--h) 62% 80%)); }
 
 /* ============================== widget designs ============================== */
-.wdesigns { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
-.wdesigns.s { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.wdesign { border: 0; background: none; padding: 0; display: grid; gap: 6px; min-width: 0; text-align: left; color: var(--ink); }
-.wdesign canvas { display: block; width: 100%; height: auto; border-radius: 18px; box-shadow: 0 0 0 1px var(--line); }
+.wgrid { display: grid; gap: 10px 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wgrid.s { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wdesign { border: 0; background: none; padding: 0; display: grid; gap: 4px; min-width: 0; text-align: center; color: var(--ink); }
+.wdesign canvas { display: block; width: 100%; height: auto; aspect-ratio: 360 / 170; border-radius: 8px; background: #2A3442; box-shadow: 0 0 0 1px var(--line); }
+.wgrid.s .wdesign canvas { aspect-ratio: 1; }
 .wdesign.on canvas { outline: 2.5px solid var(--accent); outline-offset: 2px; }
-.wdesign > b { font-size: 14px; }
+.wdesign > b { font-size: 11px; font-weight: 600; }
+.wstage { position: sticky; top: calc(var(--top) + 4px); z-index: 2; display: grid; justify-items: center; gap: 6px; padding: 14px 8px 8px; margin: 8px 0 12px; border-radius: 22px;
+  background: linear-gradient(135deg, #3A4A5C, #1E2A3A); box-shadow: var(--shadow); }
+.wstage canvas { display: block; max-width: 100%; height: auto; aspect-ratio: 360 / 170; border-radius: 22px; }
+.wstage canvas.s { aspect-ratio: 1; }
+.wstage span { color: rgba(255, 255, 255, .72); font-size: 11px; }
+.wlibrary { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wsaved { border: 0; background: none; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; text-align: left; color: var(--ink); }
+.wsaved.m { grid-column: 1 / -1; }
+.wsaved canvas { display: block; width: 100%; height: auto; aspect-ratio: 360 / 170; border-radius: 16px; margin-bottom: 4px; background: #2A3442; box-shadow: 0 0 0 1px var(--line); }
+.wsaved.s canvas { aspect-ratio: 1; }
+.wsaved b { font-size: 14px; }
+.wsaved .meta { color: var(--muted); font-size: 12px; }
+.row-btns.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mini-icon { width: 34px; height: 34px; border-radius: 9px; margin-right: 10px; }
 
 /* ============================== floating tab bar ============================== */
 .tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(var(--bottom) + 10px); z-index: 20; max-width: 520px; margin: 0 auto;

@@ -31,16 +31,19 @@ function tellNative() {
   const w = widgetCfg();
   const code = w ? widgetCode(w) : '';
   const reminders = pushState() === 'on' ? JSON.stringify({ token: M.token, api: CFG.api, alerts: nativeAlerts() }) : '';
-  if (code + reminders === nativeTold) return;
-  nativeTold = code + reminders;
+  const icon = Theme.nearest(Theme.read(setting('theme')).color);
+  if (code + reminders + icon === nativeTold) return;
+  nativeTold = code + reminders + icon;
   Native.setWidget(code);
   Native.setReminders(reminders);
+  Native.setIcon(icon);
 }
 
 function nativeSignedOut() {
   if (!Native) return;
   nativeTold = '';
   Native.signedOut();
+  Native.setIcon('Pistachio');
 }
 
 function nativeAskNotifications() {

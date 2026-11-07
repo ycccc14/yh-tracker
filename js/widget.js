@@ -1,26 +1,56 @@
 // Home Screen widgets. A web app can't make one itself, so they are shown by a Scriptable script on iPhone
-// (web/widget/scriptable.js) and by the Android app (android-app/), which has them built in. This app paints the finished
-// widgets (widget-art.js) and, after each sync, seals the pictures and a short summary with the widget key.
+// (web/widget/scriptable.js) and by the Android app (android-app/), which has them built in. This app paints them
+// (widget-art.js) and, after each sync, seals the pictures and a short summary with the widget key.
 // The server can't open them, and the widget's token can fetch only those, never the records.
-// settings 'widget' = { t: token, k: key, designs: {s, m, l}, back, color, short, cat, tap };
-// settings 'widgetpic' = the background picture, so a second phone paints the same widgets.
+//
+// The library: settings 'widget' = { t: token, k: key, tap, next, items: { id: { name, size, design, back, color, short, cat } } }.
+// Each saved widget has its own look, in use or not. A Home Screen widget shows the item it was added from (Android)
+// or the number in its Parameter (iPhone). Items 's' and 'm' are the defaults, for widgets that didn't choose one.
+// Each item's picture is its own record, settings 'widgetpic:<id>', because a record has to stay under 49,000 characters.
 'use strict';
 
 const ANDROID_APK = 'android/My-Tracker.apk';
 const SCRIPTABLE_APP = 'https://apps.apple.com/app/scriptable/id1405459188';
-const WIDGET_DEFAULTS = { designs: { s: 'balance', m: 'classic', l: 'compare' }, back: 'paper', color: '', short: false, cat: '', tap: 'app' };
+const WIDGET_MAX = 12;
+const WIDGET_LOOK = { back: 'paper', color: '', short: false, cat: '' };
 const WIDGET_IMAGE_BYTES = 36000; // sealed, this still fits one Sheet cell
 const WIDGET_PICTURE_BYTES = 25000; // as a sealed record this stays under the server's 49,000 characters (test/server.test.js)
+const WIDGET_USED_DAYS = 3; // a widget fetched this recently is on a Home Screen, so its numbers are kept fresh
 let widgetScript = ''; // loaded when the screen opens: iPhones only copy straight from the tap
 const widgetPics = {}; // loaded images by address
+let widgetQueue = Promise.resolve(); // one upload at a time
 
-const widgetCfg = () => { const w = setting('widget'); return w && w.t && w.k ? Object.assign({}, WIDGET_DEFAULTS, w, { designs: Object.assign({}, WIDGET_DEFAULTS.designs, w.designs) }) : null; };
+const validDesign = (size, design) => (WidgetArt.designsFor(size).includes(design) ? design : size === 's' ? 'balance' : 'classic');
+
+// Read-only, so it's safe in a redraw. A library saved before there were several widgets reads as the two defaults.
+function widgetCfg() {
+  const w = setting('widget');
+  if (!w || !w.t || !w.k) return null;
+  const old = { back: w.back || 'paper', color: w.color || '', short: !!w.short, cat: w.cat || '' };
+  const designs = w.designs || {};
+  const items = Object.assign({
+    s: Object.assign({ name: 'Small', size: 's', design: validDesign('s', designs.s) }, old),
+    m: Object.assign({ name: 'Wide', size: 'm', design: validDesign('m', designs.m) }, old),
+  }, w.items);
+  return { t: w.t, k: w.k, tap: w.tap || 'app', next: w.next || 1, items };
+}
+
+const widgetIds = (w) => Object.keys(w.items).sort((a, b) => (a < 'a' ? Number(a) : -1) - (b < 'a' ? Number(b) : -1) || b.localeCompare(a));
 const widgetCode = (w) => `MTW1|${CFG.api}|${w.t}|${w.k}`;
 const isAndroid = () => /Android/.test(navigator.userAgent);
 const shortName = (s) => String(s).slice(0, 20);
-const widgetColor = (w) => (/^#[0-9A-F]{6}$/i.test(w.color) ? w.color : Theme.read(setting('theme')).color);
-const widgetStyle = (w) => ({ back: w.back, color: widgetColor(w), short: !!w.short });
-const saveWidget = (change) => put('settings', { id: 'widget', value: Object.assign({}, setting('widget'), change) });
+const widgetColor = (item) => (/^#[0-9A-F]{6}$/i.test(item.color) ? item.color : Theme.read(setting('theme')).color);
+const widgetStyle = (item) => ({ back: item.back, color: widgetColor(item), short: !!item.short });
+const widgetInUse = (id) => (M.widgetUsed || {})[id] > Date.now() - WIDGET_USED_DAYS * 864e5;
+const saveWidgetCfg = (change) => put('settings', { id: 'widget', value: Object.assign({}, setting('widget'), change) });
+const saveItem = (id, change) => { const w = widgetCfg(); saveWidgetCfg({ items: Object.assign({}, w.items, { [id]: Object.assign({}, w.items[id], change) }) }); };
+
+// A default item's picture may still be in the record all widgets shared before the library. 'none' = removed.
+function itemPic(id) {
+  const own = setting('widgetpic:' + id);
+  if (own) return own === 'none' ? '' : own;
+  return id === 's' || id === 'm' ? setting('widgetpic') : '';
+}
 
 function spentToday() {
   const d = today();
@@ -28,7 +58,7 @@ function spentToday() {
 }
 
 // Everything the designs show, worked out here on the phone.
-function widgetData(w) {
+function widgetData() {
   const ym = thisMonth();
   const prev = shiftMonth(ym, -1);
   const mt = monthTotals(ym);
@@ -39,19 +69,27 @@ function widgetData(w) {
   const name = (m) => MONTHS_LONG[+m.slice(5) - 1].slice(0, 3);
   const catInfo = (c) => { const x = budgetOf(c, ym); return { name: shortName(c.name), icon: c.icon || '', spent: x.spent, budget: x.budget, left: x.left }; };
   const all = categories('expense');
-  const pick = all.find((c) => c.id === w.cat) || all.filter((c) => spent[c.id]).sort((p, q) => spent[q.id] - spent[p.id])[0] || all[0];
+  const biggest = all.filter((c) => spent[c.id]).sort((p, q) => spent[q.id] - spent[p.id]);
   return { cur: setting('currency') || 'RM', month: name(ym), prevMonth: name(prev), expense: mt.expense, income: mt.income, net: Calc.round2(mt.income - mt.expense),
     prevExpense: was.expense, prevIncome: was.income, prevNet: Calc.round2(was.income - was.expense), balance: nw.net, assets: nw.assets, debts: nw.debts, today: spentToday(),
-    budget: b.budget, spent: b.spent, left: b.left, cat: pick ? catInfo(pick) : null,
-    cats: all.filter((c) => spent[c.id]).sort((p, q) => spent[q.id] - spent[p.id]).slice(0, 6).map(catInfo),
+    budget: b.budget, spent: b.spent, left: b.left,
+    pickCat: (id) => { const c = all.find((x) => x.id === id) || biggest[0] || all[0]; return c ? catInfo(c) : null; },
+    cats: biggest.slice(0, 6).map(catInfo),
     recent: txSorted().filter((t) => t.type !== 'adjust').slice(0, 7).map((t) => { const c = cat(t.categoryId); return { icon: t.type === 'transfer' ? '🔁' : (c && c.icon) || '🧾', name: t.note || (c ? c.name : 'Transfer'), amount: t.amount, type: t.type }; }) };
 }
+const itemData = (base, item) => Object.assign({}, base, { cat: base.pickCat(item.cat) }); // each widget has its own category
 
-// What the widget apps need besides the pictures: where the buttons are, and the iPhone's add form.
+// What the widgets need besides the pictures: which items exist, where the buttons are, and the iPhone's add form.
 function widgetSummary(w) {
   const cats = (kind) => categories(kind, true).slice(0, 24).map((c) => ({ i: c.id, n: shortName(c.name), e: c.icon || '' }));
-  const quick = (size) => !!(WidgetArt.DESIGNS[w.designs[size]] || {}).buttons;
-  return { v: 3, quick: { s: quick('s'), m: quick('m'), l: quick('l') }, tap: w.tap, cur: setting('currency') || 'RM',
+  const quick = {};
+  const items = {};
+  widgetIds(w).forEach((id) => {
+    const it = w.items[id];
+    quick[id] = !!(WidgetArt.DESIGNS[it.design] || {}).buttons;
+    items[id] = { s: it.size, c: it.back === 'clear' };
+  });
+  return { v: 4, quick, items, tap: w.tap, cur: setting('currency') || 'RM',
     accounts: accounts().slice(0, 12).map((a) => ({ i: a.id, n: shortName(a.name) })), ex: cats('expense'), in: cats('income') };
 }
 
@@ -65,14 +103,10 @@ function loadPic(src) {
     img.src = src;
   });
 }
-async function widgetArtwork() {
-  const [art, picture] = await Promise.all([loadPic('widget/art.png'), loadPic(setting('widgetpic'))]);
-  return { art, picture };
-}
 
 // A canvas as bytes that always fit one Sheet cell: PNG keeps text crisp; a picture background needs JPEG,
-// and a very detailed one also a lower resolution.
-function canvasBytes(cv, photo) {
+// a very detailed one also a lower resolution, and the words layer stays PNG because it has to stay see-through.
+function canvasBytes(cv, photo, seeThrough) {
   const fits = (url) => url.length * 0.75 <= WIDGET_IMAGE_BYTES;
   let url = cv.toDataURL('image/png');
   if (!photo && fits(url)) return url;
@@ -81,6 +115,11 @@ function canvasBytes(cv, photo) {
     small.width = Math.round(cv.width * zoom);
     small.height = Math.round(cv.height * zoom);
     small.getContext('2d').drawImage(cv, 0, 0, small.width, small.height);
+    if (seeThrough) {
+      url = small.toDataURL('image/png');
+      if (fits(url)) return url;
+      continue;
+    }
     for (let q = 0.82; q > 0.4; q -= 0.1) {
       url = small.toDataURL('image/jpeg', q);
       if (fits(url)) return url;
@@ -95,25 +134,56 @@ function hashText(s) {
   return h;
 }
 
-// After a sync: paints and uploads whatever changed (a new record, a new month, a new design or colour).
-async function pushWidget() {
+// Two fingerprints per item. look: anything the person chose. numbers: what it shows.
+function itemHashes(id, item, base) {
+  const data = Object.assign({}, itemData(base, item), { pickCat: 0 });
+  return { l: hashText(JSON.stringify([item, itemPic(id).length, widgetColor(item)])), n: hashText(JSON.stringify(data)) };
+}
+
+async function sealedLayer(w, item, data, picture, which) {
+  const cv = document.createElement('canvas');
+  WidgetArt.paint(cv, item.size, item.design, widgetStyle(item), data, picture, 2, which);
+  const url = canvasBytes(cv, item.back === 'picture' && !!picture && which !== 'text', which === 'text');
+  return Crypt.wrapKey(url.slice(url.indexOf(',') + 1).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), w.k);
+}
+
+// Uploads what changed. New looks always go up; new numbers only for widgets in use, so a big library of saved
+// widgets doesn't add to each record's upload. `now` = an item about to go on a Home Screen.
+async function uploadWidgets(now) {
   const w = widgetCfg();
   if (!w || CFG.demo) return;
-  const data = widgetData(w);
-  const summary = widgetSummary(w);
-  const pics = await widgetArtwork();
-  const state = w.t + hashText(JSON.stringify([data, summary, w, setting('widgetpic').length, Theme.read(setting('theme'))]));
-  if (state === M.widgetSent) return;
-  await api('widgetPut', { t: w.t, data: await Crypt.sealJson(await Crypt.dataKey(w.k), summary) });
-  for (const size of Object.keys(WidgetArt.SIZES)) {
-    const cv = document.createElement('canvas');
-    WidgetArt.paint(cv, size, w.designs[size], widgetStyle(w), data, pics, 2);
-    const url = canvasBytes(cv, w.back === 'picture' && !!pics.picture);
-    await api('widgetImg', { t: w.t, size, data: await Crypt.wrapKey(url.slice(url.indexOf(',') + 1).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), w.k) });
+  const base = widgetData();
+  const summary = JSON.stringify(widgetSummary(w));
+  const sent = M.widgetSent && M.widgetSent.t === w.t ? M.widgetSent : { t: w.t, summary: 0, items: {} };
+  const hashes = {};
+  widgetIds(w).forEach((id) => { hashes[id] = itemHashes(id, w.items[id], base); });
+  const changed = widgetIds(w).filter((id) => !sent.items[id] || sent.items[id].l !== hashes[id].l || sent.items[id].n !== hashes[id].n);
+  const gone = Object.keys(sent.items).filter((id) => !w.items[id]);
+  if (hashText(summary) === sent.summary && !changed.length && !gone.length) return;
+
+  const { used } = await api('widgetPut', { t: w.t, data: await Crypt.sealJson(await Crypt.dataKey(w.k), JSON.parse(summary)) });
+  M.widgetUsed = used || {};
+  const go = changed.filter((id) => id === now || !sent.items[id] || sent.items[id].l !== hashes[id].l || widgetInUse(id));
+  const rows = [];
+  for (const id of go) {
+    const item = w.items[id];
+    const data = itemData(base, item);
+    const picture = await loadPic(itemPic(id));
+    rows.push({ k: id + 'b', data: await sealedLayer(w, item, data, picture, 'back') }, { k: id + 't', data: await sealedLayer(w, item, data, picture, 'text') });
+    if (id === 's' || id === 'm') rows.push({ k: id, data: await sealedLayer(w, item, data, picture, 'all') }); // for scripts and apps from before the layers
   }
-  M.widgetSent = state;
+  if (rows.length || gone.length) await api('widgetImgs', { t: w.t, rows, drop: gone });
+  const items = {};
+  widgetIds(w).forEach((id) => { items[id] = go.includes(id) ? hashes[id] : sent.items[id] || hashes[id]; });
+  M.widgetSent = { t: w.t, summary: hashText(summary), items };
   persist();
   if (Native) Native.refreshWidgets(); // the Home Screen shows it now, not at the next half hour
+}
+
+function pushWidget(now) {
+  const run = widgetQueue.then(() => uploadWidgets(now));
+  widgetQueue = run.catch(() => {});
+  return run;
 }
 
 // A widget's entry is outside input: only known types, accounts and categories become a record.
@@ -157,57 +227,90 @@ function loadWidgetScript() {
 // The previews are the same drawing as the real thing, painted once the screen is on the page.
 async function paintWidgetPreviews() {
   const w = widgetCfg();
-  const list = $$('canvas[data-design]');
+  const list = $$('canvas[data-item]');
   if (!w || !list.length) return;
-  const data = widgetData(w);
-  const pics = await widgetArtwork();
-  list.forEach((cv) => WidgetArt.paint(cv, cv.dataset.size, cv.dataset.design, widgetStyle(w), data, pics, 1.5));
+  const base = widgetData();
+  for (const cv of list) {
+    const item = w.items[cv.dataset.item];
+    if (!item) continue;
+    const picture = await loadPic(itemPic(cv.dataset.item));
+    WidgetArt.paint(cv, item.size, cv.dataset.design || item.design, widgetStyle(item), itemData(base, item), picture, Number(cv.dataset.scale) || 1.5);
+  }
+}
+
+// How big a widget really is on this phone (Apple's sizes by screen width; Android's are close, and vary by phone).
+function widgetRealWidth(size) {
+  const row = [[428, 170, 364], [414, 169, 360], [390, 158, 338], [375, 155, 329], [0, 141, 292]].find(([from]) => window.innerWidth >= from);
+  return size === 's' ? row[1] : row[2];
+}
+
+function widgetLibrary(w) {
+  const card = (id) => {
+    const it = w.items[id];
+    return `<button class="wsaved ${it.size}" data-a="go" data-to="widget/${id}" aria-label="Edit ${esc(it.name)}">
+      <canvas data-item="${id}" data-scale="1.5"></canvas><b class="ellipsis">${esc(it.name)}</b>
+      <span class="meta">${widgetInUse(id) ? 'On a Home Screen' : 'Saved'}</span></button>`;
+  };
+  return `<section class="card stack"><div class="spread"><h2>My widgets</h2><span class="muted small">${widgetIds(w).length} of ${WIDGET_MAX}</span></div>
+      <div class="wlibrary">${widgetIds(w).map(card).join('')}</div>
+      <div class="row-btns two"><button class="btn" data-a="widget-new" data-v="s">＋ New Small</button><button class="btn" data-a="widget-new" data-v="m">＋ New Wide</button></div>
+      <p class="muted small">Each widget keeps its own layout, colours and picture, and stays here until you delete it, on a Home Screen or not.</p></section>`;
+}
+
+function widgetEditor(w, id) {
+  const it = w.items[id];
+  const usesCat = it.design === 'category';
+  const stage = `<section class="wstage" aria-label="Actual size"><canvas class="${it.size}" data-item="${id}" data-scale="3" style="width:${widgetRealWidth(it.size)}px"></canvas><span>Actual size</span></section>`;
+  const add = Native ? `<button class="btn primary block" data-a="widget-pin" data-v="${id}">Add to Home Screen</button>`
+    : isIOS() ? `<p class="muted small">${id === 's' || id === 'm' ? 'iPhone widgets show this one when their Parameter is empty.' : `To show this on iPhone: touch and hold the widget, tap <b>Edit Widget</b>, and type <b>${esc(id)}</b> under <b>Parameter</b>.`}</p>` : '';
+  const layouts = `<section class="card stack"><h2>Layout</h2><div class="wgrid ${it.size}">${WidgetArt.designsFor(it.size).map((d) => `<button class="wdesign ${it.design === d ? 'on' : ''}" data-a="widget-design" data-v="${d}" aria-label="${WidgetArt.DESIGNS[d].name}">
+      <canvas data-item="${id}" data-design="${d}" data-scale="1"></canvas><b class="ellipsis">${WidgetArt.DESIGNS[d].name}</b></button>`).join('')}</div></section>`;
+  const look = `<section class="card stack"><h2>Customise</h2>
+      <label class="field"><span>Name</span><input class="input" maxlength="20" value="${esc(it.name)}" data-change="widget-name"></label>
+      <div class="field"><span>Background</span><div class="chips">${WidgetArt.BACKS.map(([b, name]) => `<button class="chip ${it.back === b ? 'on' : ''}" data-a="widget-back" data-v="${b}">${name}</button>`).join('')}</div>
+        ${it.back === 'clear' ? '<p class="muted small">Only white words and numbers, so they stay readable on a tinted or clear iPhone Home Screen.</p>' : isIOS() ? '<p class="muted small">Tinted or clear Home Screen? Choose <b>Clear</b>.</p>' : ''}</div>
+      ${it.back === 'picture' ? `<div class="pic-btns"><label class="btn file-pick">🖼️ ${itemPic(id) ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="widget-picture"></label>
+        ${itemPic(id) ? '<button class="btn" data-a="widget-picture-clear">Remove</button>' : ''}</div>` : ''}
+      ${it.back === 'clear' ? '' : `<div class="field"><span>Colour</span><div class="swatches"><button class="${it.color ? '' : 'on'}" style="background:${Theme.read(setting('theme')).color}" data-a="widget-color" data-v="" aria-label="Same as the app"></button>
+        ${Theme.PRESETS.map(([name, c]) => `<button class="${it.color === c ? 'on' : ''}" style="background:${c}" data-a="widget-color" data-v="${c}" aria-label="${name}"></button>`).join('')}</div></div>`}
+      ${usesCat ? `<label class="field"><span>Category to show</span><select class="input" data-change="widget-cat"><option value="">Biggest spending</option>
+        ${categories('expense').map((c) => `<option value="${esc(c.id)}" ${it.cat === c.id ? 'selected' : ''}>${esc(c.icon || '')} ${esc(c.name)}</option>`).join('')}</select></label>` : ''}
+      <div class="spread"><span>Short amounts (RM4.7k)</span><label class="switch"><input type="checkbox" data-change="widget-short" ${it.short ? 'checked' : ''} aria-label="Short amounts"><i></i></label></div></section>`;
+  const manage = `<div class="row-btns two"><button class="btn" data-a="widget-copy">Duplicate</button>${id === 's' || id === 'm' ? '' : '<button class="btn danger" data-a="widget-delete">Delete</button>'}</div>
+      ${id === 's' || id === 'm' ? '<p class="muted small center-text">This is the default for widgets that didn’t choose one, so it can be changed but not deleted.</p>' : ''}`;
+  return screenHead(esc(it.name), { back: 'widget' }) + stage + add + layouts + look + manage;
 }
 
 function widgetScreen() {
   const w = widgetCfg();
   if (w) loadWidgetScript();
+  if (w && w.items[view.arg]) return widgetEditor(w, view.arg);
   const head = screenHead('Home Screen widget', { back: 'settings' });
   const toggle = `<section class="card flush"><div class="item"><span class="bubble">📊</span><span class="grow"><span class="title">Widget</span>
       <span class="meta">${CFG.demo ? 'Not in the preview' : 'Your money on the Home Screen. Anyone who sees your Home Screen sees these numbers.'}</span></span>
       <label class="switch"><input type="checkbox" data-change="widget-toggle" ${w ? 'checked' : ''} ${CFG.demo ? 'disabled' : ''} aria-label="Widget"><i></i></label></div></section>`;
   if (!w) return head + toggle;
-  const size = WidgetArt.SIZES[view.wsize] ? view.wsize : 'm';
-  const sizes = Object.keys(WidgetArt.SIZES).map((k) => `<button class="${k === size ? 'on' : ''}" data-a="widget-size" data-v="${k}">${WidgetArt.SIZES[k].name}</button>`).join('');
-  const designs = `<section class="card stack"><h2>Choose a design</h2><div class="seg">${sizes}</div>
-      <div class="wdesigns ${size}">${WidgetArt.designsFor(size).map((id) => `<button class="wdesign ${w.designs[size] === id ? 'on' : ''}" data-a="widget-design" data-size="${size}" data-v="${id}" aria-label="${WidgetArt.DESIGNS[id].name}">
-        <canvas data-size="${size}" data-design="${id}"></canvas><b class="ellipsis">${WidgetArt.DESIGNS[id].name}</b></button>`).join('')}</div>
-      <p class="muted small">Each size keeps its own design. Widgets change by themselves, usually within 30 minutes.</p></section>`;
-  const usesCat = Object.values(w.designs).includes('category');
-  const look = `<section class="card stack"><h2>Customise</h2>
-      <div class="field"><span>Background</span><div class="chips">${WidgetArt.BACKS.map(([id, name]) => `<button class="chip ${w.back === id ? 'on' : ''}" data-a="widget-back" data-v="${id}">${name}</button>`).join('')}</div></div>
-      ${w.back === 'picture' ? `<div class="pic-btns"><label class="btn file-pick">🖼️ ${setting('widgetpic') ? 'Change picture' : 'Choose a picture'}<input type="file" accept="image/*" data-change="widget-picture"></label>
-        ${setting('widgetpic') ? '<button class="btn" data-a="widget-picture-clear">Remove</button>' : ''}</div>` : ''}
-      <div class="field"><span>Colour</span><div class="swatches"><button class="${w.color ? '' : 'on'}" style="background:${Theme.read(setting('theme')).color}" data-a="widget-color" data-v="" aria-label="Same as the app"></button>
-        ${Theme.PRESETS.map(([name, c]) => `<button class="${w.color === c ? 'on' : ''}" style="background:${c}" data-a="widget-color" data-v="${c}" aria-label="${name}"></button>`).join('')}</div></div>
-      ${usesCat ? `<label class="field"><span>Category to show</span><select class="input" data-change="widget-cat"><option value="">Biggest spending</option>
-        ${categories('expense').map((c) => `<option value="${esc(c.id)}" ${w.cat === c.id ? 'selected' : ''}>${esc(c.icon || '')} ${esc(c.name)}</option>`).join('')}</select></label>` : ''}
-      <div class="spread"><span>Short amounts (RM4.7k)</span><label class="switch"><input type="checkbox" data-change="widget-short" ${w.short ? 'checked' : ''} aria-label="Short amounts"><i></i></label></div></section>`;
+  const taps = [['app', 'Safari'], ['form', 'Quick form'], ['shortcut', 'A Shortcut']];
   const iphone = `<section class="card stack"><h2>iPhone</h2><ol class="steps">
       <li><span>Get the free app <a class="link" href="${SCRIPTABLE_APP}" target="_blank" rel="noopener">Scriptable</a> from the App Store.</span></li>
       <li><span>Tap <b>Copy script</b> below.</span></li>
-      <li><span>In Scriptable tap <b>＋</b>, paste, and tap <b>Done</b>.</span></li>
+      <li><span>In Scriptable tap <b>＋</b>, paste, name it <b>My Tracker</b> and tap <b>Done</b>.</span></li>
       <li><span>Touch and hold your Home Screen, tap <b>Edit ▸ Add Widget</b>, pick <b>Scriptable</b> and the size you want.</span></li>
-      <li><span>Touch and hold the new widget, tap <b>Edit Widget</b>, and choose your script under <b>Script</b>.</span></li></ol>
+      <li><span>Touch and hold the new widget, tap <b>Edit Widget</b>, and choose <b>My Tracker</b> under <b>Script</b>. To show a saved widget, type its number under <b>Parameter</b>: you’ll find it when you open that widget here.</span></li></ol>
       <button class="btn primary block" data-a="widget-copy-script">Copy script</button>
-      <div class="field"><span>Tapping the widget on iPhone</span><div class="seg"><button class="${w.tap === 'app' ? 'on' : ''}" data-a="widget-tap" data-v="app">Opens My Tracker in Safari</button><button class="${w.tap === 'form' ? 'on' : ''}" data-a="widget-tap" data-v="form">Quick form</button></div></div>
-      <p class="muted small">iPhones can’t open the Home Screen app from a widget. Safari has its own sign-in, so sign in there once. The quick form needs no sign-in, and its records appear when My Tracker next opens.</p></section>`;
+      <div class="field"><span>Tapping the widget on iPhone</span><div class="chips">${taps.map(([v, name]) => `<button class="chip ${w.tap === v ? 'on' : ''}" data-a="widget-tap" data-v="${v}">${name}</button>`).join('')}</div></div>
+      <p class="muted small">${{ app: 'iPhones can’t open the Home Screen app from a widget, so this opens My Tracker in Safari, which has its own sign-in.',
+    form: 'A quick form with no sign-in. Its records appear when My Tracker next opens.',
+    shortcut: 'Runs the Shortcut you name <b>My Tracker</b>, so you decide what a tap does. It receives the page, for example add/expense.' }[w.tap]}</p>
+      <p class="muted small">Add records faster: make a Shortcut with <b>Open URLs</b> and <b>scriptable:///run/My%20Tracker?add=expense</b>, then put it on the Action Button, Back Tap or Siri.</p></section>`;
   const android = `<section class="card stack"><h2>Android</h2><ol class="steps">
       <li><span>Download the My Tracker app, open the file and allow it. The widgets come with it.</span></li>
-      <li><span>Sign in there. Your records and widget settings come back by themselves.</span></li>
-      <li><span>Open this screen in the app and tap the size you want.</span></li></ol>
+      <li><span>Sign in there. Your records and widgets come back by themselves.</span></li>
+      <li><span>Open a widget in the app and tap <b>Add to Home Screen</b>.</span></li></ol>
       <a class="btn block" href="${ANDROID_APK}" download="My-Tracker.apk">Download My Tracker for Android</a></section>`;
-  const add = `<section class="card stack"><h2>Add to your Home Screen</h2>
-      <div class="row-btns">${Object.keys(WidgetArt.SIZES).map((k) => `<button class="btn primary" data-a="widget-pin" data-v="${k}">Add ${WidgetArt.SIZES[k].name}</button>`).join('')}</div>
-      <p class="muted small">If you don’t see it, swipe to your next Home Screen page. You can also touch and hold your Home Screen, tap <b>Widgets</b> and pick <b>My Tracker</b>.</p></section>`;
-  if (Native) return head + toggle + add + designs + look;
+  if (Native) return head + toggle + widgetLibrary(w) + '<p class="muted small center-text">Open a widget to customise it and add it to your Home Screen.</p>';
   const note = '<p class="muted small center-text">The script is like a key to these numbers, so keep it to yourself. Turning the widget off makes it stop working.</p>';
-  return head + toggle + designs + look + (isIOS() ? iphone + android : android + iphone) + note;
+  return head + toggle + widgetLibrary(w) + (isIOS() ? iphone + android : android + iphone) + note;
 }
 
 async function copyText(text, done) {
@@ -245,39 +348,75 @@ function widgetPicture(file) {
   });
 }
 
-actions['widget-pin'] = (el) => { if (!Native.pinWidget(el.dataset.v)) toast('Touch and hold your Home Screen, tap Widgets, then pick My Tracker.', 4500); };
+function addItem(item, picture) {
+  const w = widgetCfg();
+  if (widgetIds(w).length >= WIDGET_MAX) { toast(`You can keep ${WIDGET_MAX} widgets. Delete one first.`); return; }
+  const id = String(w.next);
+  saveWidgetCfg({ next: w.next + 1, items: Object.assign({}, w.items, { [id]: item }) });
+  if (picture) put('settings', { id: 'widgetpic:' + id, value: picture });
+  go('widget', id);
+}
+
 actions['widget-copy-script'] = () => {
   if (!widgetScript) { loadWidgetScript(); toast('Still loading. Tap again in a moment.'); return; }
   copyText(widgetScript.replace('__WIDGET_CODE__', widgetCode(widgetCfg())), 'Script copied ✓');
 };
-actions['widget-size'] = (el) => { view.wsize = el.dataset.v; render(); };
-actions['widget-design'] = (el) => saveWidget({ designs: Object.assign({}, widgetCfg().designs, { [el.dataset.size]: el.dataset.v }) });
-actions['widget-back'] = (el) => saveWidget({ back: el.dataset.v });
-actions['widget-color'] = (el) => saveWidget({ color: el.dataset.v });
-actions['widget-cat'] = (el) => saveWidget({ cat: el.value });
-actions['widget-short'] = (el) => saveWidget({ short: el.checked });
-actions['widget-tap'] = (el) => saveWidget({ tap: el.dataset.v });
+actions['widget-new'] = (el) => {
+  const size = el.dataset.v;
+  addItem(Object.assign({ name: `${WidgetArt.SIZES[size].name} ${widgetCfg().next}`, size, design: validDesign(size) }, WIDGET_LOOK));
+};
+actions['widget-copy'] = () => {
+  const id = view.arg;
+  const it = widgetCfg().items[id];
+  addItem(Object.assign({}, it, { name: shortName(it.name + ' copy') }), itemPic(id));
+};
+actions['widget-delete'] = async () => {
+  const id = view.arg;
+  if (!(await confirmSheet('Delete this widget?', 'If it’s on a Home Screen, that widget goes back to the default look.', 'Delete', true))) return;
+  const items = Object.assign({}, widgetCfg().items);
+  delete items[id];
+  saveWidgetCfg({ items });
+  if (setting('widgetpic:' + id)) remove('settings', 'widgetpic:' + id);
+  go('widget');
+};
+actions['widget-design'] = (el) => saveItem(view.arg, { design: el.dataset.v });
+actions['widget-back'] = (el) => saveItem(view.arg, { back: el.dataset.v });
+actions['widget-color'] = (el) => saveItem(view.arg, { color: el.dataset.v });
+actions['widget-cat'] = (el) => saveItem(view.arg, { cat: el.value });
+actions['widget-short'] = (el) => saveItem(view.arg, { short: el.checked });
+actions['widget-name'] = (el) => saveItem(view.arg, { name: shortName(el.value.trim()) || widgetCfg().items[view.arg].name });
+actions['widget-tap'] = (el) => saveWidgetCfg({ tap: el.dataset.v });
 actions['widget-picture'] = async (el) => {
   const file = el.files && el.files[0];
   if (!file) return;
   try {
-    put('settings', { id: 'widgetpic', value: await widgetPicture(file) });
+    put('settings', { id: 'widgetpic:' + view.arg, value: await widgetPicture(file) });
   } catch (e) {
     toast('That picture couldn’t be opened. Try another one.');
   }
 };
-actions['widget-picture-clear'] = () => remove('settings', 'widgetpic');
+actions['widget-picture-clear'] = () => put('settings', { id: 'widgetpic:' + view.arg, value: 'none' });
+actions['widget-pin'] = async (el) => {
+  const id = el.dataset.v;
+  el.disabled = true;
+  try {
+    await pushWidget(id); // the newest look and numbers are there when it lands on the Home Screen
+  } catch (e) { /* offline: it shows them after the next sync */ }
+  el.disabled = false;
+  if (!Native.pinWidget(id, widgetCfg().items[id].size)) toast('Touch and hold your Home Screen, tap Widgets, then pick My Tracker.', 4500);
+};
 
+// Off ends the code on every phone, but keeps the library: only the keys go.
 actions['widget-toggle'] = async (el) => {
   const w = widgetCfg();
   if (el.checked) {
-    put('settings', { id: 'widget', value: Object.assign({}, WIDGET_DEFAULTS, { t: Crypt.newKey(), k: Crypt.newKey() }) }); // the next sync uploads it
+    saveWidgetCfg({ t: Crypt.newKey(), k: Crypt.newKey() }); // the next sync uploads it
     return;
   }
-  if (!(await confirmSheet('Turn the widget off?', 'Widgets on your phones go blank, and their code stops working. Turning it on again gives a new code.', 'Turn off', true))) { el.checked = true; return; }
+  if (!(await confirmSheet('Turn the widget off?', 'Widgets on your phones go blank, and their code stops working. Your saved widgets stay here. Turning it on again gives a new code.', 'Turn off', true))) { el.checked = true; return; }
   try {
     await api('widgetOff', { t: w.t });
-    remove('settings', 'widget');
+    saveWidgetCfg({ t: '', k: '', items: w.items, next: w.next, tap: w.tap });
   } catch (e) {
     el.checked = true;
     toast(e.message);

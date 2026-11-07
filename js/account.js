@@ -38,7 +38,7 @@ function saltFor(username) {
 }
 
 function showWelcome(note) {
-  cover(`${appIcon}<div><h1>My Tracker</h1><p class="muted" style="margin-top:6px">Sign in to see your money on any phone.</p></div>
+  cover(`${appIcon()}<div><h1>My Tracker</h1><p class="muted" style="margin-top:6px">Sign in to see your money on any phone.</p></div>
     ${note ? `<div class="banner warn"><p>${esc(note)}</p></div>` : ''}
     <section class="card stack" style="text-align:left">
       <label class="field"><span>Username</span><input class="input" id="in-user" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30"></label>
@@ -81,7 +81,7 @@ async function startSession(r, dk, fresh, salt) {
 
 // ============================== sign up ==============================
 function showSignup() {
-  cover(`${appIcon}<div><h1>Create your account</h1><p class="muted" style="margin-top:6px">You need the invite code YC sent you.</p></div>
+  cover(`${appIcon()}<div><h1>Create your account</h1><p class="muted" style="margin-top:6px">You need the invite code YC sent you.</p></div>
     <section class="card stack" style="text-align:left">
       <label class="field"><span>Invite code</span><input class="input code-input" id="up-invite" maxlength="9" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false"></label>
       <label class="field"><span>Your name</span><input class="input" id="up-name" maxlength="30" autocomplete="given-name" placeholder="e.g. YH"></label>
@@ -134,7 +134,7 @@ actions['signup-go'] = (el) => busy(el, 'Creating…', async () => {
 let resetUser = '';
 function showForgot(step) {
   if (step !== 2) {
-    cover(`${appIcon}<div><h1>Forgot password</h1><p class="muted" style="margin-top:6px">We’ll send a code to your Telegram. No Telegram? Ask YC for a reset code.</p></div>
+    cover(`${appIcon()}<div><h1>Forgot password</h1><p class="muted" style="margin-top:6px">We’ll send a code to your Telegram. No Telegram? Ask YC for a reset code.</p></div>
       <section class="card stack" style="text-align:left">
         <label class="field"><span>Username</span><input class="input" id="fp-user" maxlength="30" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="${esc(resetUser)}"></label>
         <button class="btn primary block" data-a="forgot-send">Send code to Telegram</button>
@@ -143,7 +143,7 @@ function showForgot(step) {
       </section>`);
     return;
   }
-  cover(`${appIcon}<div><h1>New password</h1><p class="muted" style="margin-top:6px">For <b>${esc(resetUser)}</b>. Type the code and choose a new password.</p></div>
+  cover(`${appIcon()}<div><h1>New password</h1><p class="muted" style="margin-top:6px">For <b>${esc(resetUser)}</b>. Type the code and choose a new password.</p></div>
     <section class="card stack" style="text-align:left">
       <label class="field"><span>Code</span><input class="input code-input" id="fp-code" maxlength="9" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false"></label>
       <label class="field"><span>New password</span><input class="input" id="fp-pass" type="password" autocomplete="new-password" maxlength="100" placeholder="at least 8 characters"></label>

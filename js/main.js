@@ -192,10 +192,10 @@ function cover(html) {
   $('#tabs').hidden = true;
   return el;
 }
-const appIcon = '<img class="app-icon" src="icons/icon-180.png" alt="" width="88" height="88">';
+const appIcon = () => `<img class="app-icon" src="${Theme.iconUrl()}" alt="" width="88" height="88">`;
 
 function showInstall() {
-  cover(`${appIcon}<div><h1>Install My Tracker</h1><p class="muted" style="margin-top:6px">Add it to your Home Screen so it opens like a normal app, works offline and can remind you about bills.</p></div>
+  cover(`${appIcon()}<div><h1>Install My Tracker</h1><p class="muted" style="margin-top:6px">Add it to your Home Screen so it opens like a normal app, works offline and can remind you about bills.</p></div>
     <section class="card"><ol class="steps">
       <li><span>Tap the <b>Share</b> button <span style="display:inline-block;vertical-align:-5px;color:var(--series-income)">${icon('share')}</span> at the bottom of Safari.</span></li>
       <li><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>
@@ -248,7 +248,7 @@ function lockApp() {
   return new Promise((resolve) => {
     let fails = 0;
     const draw = (msg) => {
-      cover(`${appIcon}<h2>Enter your PIN</h2><p class="small" style="color:var(--bad);min-height:18px">${esc(msg || '')}</p>${pinPad('lock-dots')}
+      cover(`${appIcon()}<h2>Enter your PIN</h2><p class="small" style="color:var(--bad);min-height:18px">${esc(msg || '')}</p>${pinPad('lock-dots')}
         <button class="link" data-a="pin-forgot">Forgot PIN?</button>`);
     };
     draw();
@@ -402,7 +402,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   try {
     await loadLocal();
   } catch (e) {
-    cover(`${appIcon}<h1>Can’t open storage</h1><p class="muted">The phone didn’t let the app save data. If you’re in Private Browsing, switch it off, or open My Tracker from the Home Screen.</p>`);
+    cover(`${appIcon()}<h1>Can’t open storage</h1><p class="muted">The phone didn’t let the app save data. If you’re in Private Browsing, switch it off, or open My Tracker from the Home Screen.</p>`);
     return;
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
