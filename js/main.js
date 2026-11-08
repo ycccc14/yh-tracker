@@ -240,7 +240,95 @@ actions['pin-key'] = (el) => {
   }
 };
 
+// ---------- Face ID (iPhone) / fingerprint or face (Android) ----------
+// iPhone, as in the ZR & YC app: a passkey made on this phone and used only to unlock the app. iPhone asks for Face ID
+// before it signs, and the app checks Face ID was really used (the "user verified" flag). Android app: the phone's own
+// prompt for whatever it has enrolled (MyTrackerApp.bioUnlock). Either way nothing goes to the server, and the PIN stays
+// as the way in when it fails. The lock screen asks by itself, so she doesn't have to tap anything.
+const Bio = { kind: '', state: 'no', name: '' }; // kind 'passkey' | 'native'; state 'ready' | 'none' (nothing enrolled) | 'old' (old Android app) | 'no'
+function bioRead() { // Android: asked each time, she may have added or removed a fingerprint meanwhile
+  if (!Native) return Bio;
+  if (!Native.bioStatus) return Object.assign(Bio, { kind: 'native', state: 'old', name: 'fingerprint' });
+  try {
+    const s = JSON.parse(Native.bioStatus());
+    Object.assign(Bio, { kind: 'native', state: s.state, name: s.name });
+  } catch (e) { Bio.state = 'no'; }
+  return Bio;
+}
+const bioReady = (async () => {
+  if (Native) { bioRead(); return; }
+  let ok = false;
+  try {
+    ok = window.self === window.top && !!window.PublicKeyCredential && !!navigator.credentials
+      && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch (e) { /* no Face ID here */ }
+  Object.assign(Bio, { kind: 'passkey', state: ok ? 'ready' : 'no', name: isIOS() ? 'Face ID' : 'fingerprint or face' });
+  if (ok && M.token && !locked && view.route === 'settings') render(); // the switch appears once it's known
+})();
+const bioLabel = () => Bio.name.charAt(0).toUpperCase() + Bio.name.slice(1);
+const bioOn = () => !!(M.pinHash && M.bio && M.bio.kind === Bio.kind && Bio.state === 'ready');
+const FACE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 16c1.7 1.3 4.3 1.3 6 0"/></svg>';
+const FINGER_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7M8.5 7.2A5 5 0 0 1 17 11v1.5M7 11a5 5 0 0 1 .3-1.7M17 16a12 12 0 0 1-1 4M5 4.9A9 9 0 0 1 21 11v1M3 9a9 9 0 0 1 .7-2M9 11v2.5a5 5 0 0 1-1.7 3.8M14.5 14.5a14 14 0 0 1-1.6 5.5"/></svg>';
+const bioIcon = () => (/face/i.test(Bio.name) && !/finger/.test(Bio.name) ? FACE_ICON : FINGER_ICON);
+
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+async function passkeyMake() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    rp: { name: 'My Tracker' },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'My Tracker app lock', displayName: 'My Tracker app lock' },
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    attestation: 'none',
+    timeout: 60000,
+  } });
+  return { kind: 'passkey', id: b64u(cred.rawId) };
+}
+
+// Resolves only if this phone's own passkey signed with Face ID.
+async function passkeyCheck(id) {
+  const cred = await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: 'public-key', id: unb64u(id), transports: ['internal'] }],
+    userVerification: 'required',
+    timeout: 60000,
+  } });
+  const flags = new Uint8Array(cred.response.authenticatorData)[32];
+  if (b64u(cred.rawId) !== id || !(flags & 4)) throw new Error('Face ID wasn’t confirmed.');
+}
+
+let bioCall = null; // the Android prompt that's open: { nonce, done }
+window.nativeBioDone = (nonce, result) => {
+  if (!bioCall || bioCall.nonce !== nonce) return;
+  const done = bioCall.done;
+  bioCall = null;
+  done(result);
+};
+// 'ok', 'cancel' (she chose the PIN), 'lockout' (too many tries), 'error', or 'skip' / 'busy' (nothing shown).
+// `auto`: asked by the lock screen itself; Android shows that once each time the app comes to the front.
+function nativeBio(auto) {
+  return new Promise((done) => {
+    const nonce = uid();
+    bioCall = { nonce, done };
+    Native.bioUnlock(nonce, !!auto);
+  });
+}
+async function bioCheck(auto) {
+  if (Bio.kind === 'native') return nativeBio(auto);
+  try {
+    await passkeyCheck(M.bio.id);
+    return 'ok';
+  } catch (e) {
+    return e && e.name === 'NotAllowedError' ? 'cancel' : 'error'; // iPhone says NotAllowed both for Cancel and a face it didn't know
+  }
+}
+
 let locked = false;
+let lockDraw = null; // redraws the lock screen with a message
+let unlockNow = null; // opens the app (set while it's locked)
+let bioBusy = false;
 function lockApp() {
   if (!M.pinHash || locked) return Promise.resolve();
   locked = true;
@@ -248,18 +336,25 @@ function lockApp() {
   return new Promise((resolve) => {
     let fails = 0;
     const draw = (msg) => {
-      cover(`${appIcon()}<h2>Enter your PIN</h2><p class="small" style="color:var(--bad);min-height:18px">${esc(msg || '')}</p>${pinPad('lock-dots')}
-        <button class="link" data-a="pin-forgot">Forgot PIN?</button>`);
+      const bio = bioOn() ? `<button class="btn lock-bio" data-a="lock-bio">${bioIcon()} Use ${esc(Bio.name)}</button>` : '';
+      cover(`${appIcon()}<h2>Enter your PIN</h2><p class="small" style="color:var(--bad);min-height:18px" role="status">${esc(msg || '')}</p>${pinPad('lock-dots')}
+        ${bio}<button class="link" data-a="pin-forgot">Forgot PIN?</button>`);
+    };
+    lockDraw = draw;
+    unlockNow = () => {
+      locked = false;
+      pinEntry = null;
+      lockDraw = null;
+      unlockNow = null;
+      $('#cover').hidden = true;
+      $('#tabs').hidden = false;
+      render();
+      resolve();
     };
     draw();
     pinEntry = { digits: '', dots: 'lock-dots', done: async (pin) => {
       if (await hashPin(pin, M.pinSalt) === M.pinHash) {
-        locked = false;
-        pinEntry = null;
-        $('#cover').hidden = true;
-        $('#tabs').hidden = false;
-        render();
-        resolve();
+        if (unlockNow) unlockNow();
         return;
       }
       fails++;
@@ -272,8 +367,27 @@ function lockApp() {
         draw('Wrong PIN, try again.');
       }
     } };
+    bioTry(true);
   });
 }
+
+// Unlock with Face ID / fingerprint. `auto` (the lock screen asking by itself) stays quiet when it doesn't work:
+// the PIN pad is right there.
+async function bioTry(auto) {
+  await bioReady;
+  bioRead();
+  if (!locked || bioBusy || !bioOn()) return;
+  bioBusy = true;
+  const r = await bioCheck(auto);
+  bioBusy = false;
+  if (!locked) return;
+  if (r === 'ok') { unlockNow(); return; }
+  if (r === 'skip' || r === 'busy' || (auto && r !== 'lockout') || (r === 'cancel' && Bio.kind === 'native')) return;
+  if (pinEntry) pinEntry.digits = '';
+  lockDraw(r === 'lockout' ? 'Too many tries with ' + Bio.name + '. Enter your PIN.' : bioLabel() + ' didn’t unlock it. Enter your PIN.');
+}
+actions['lock-bio'] = () => bioTry(false);
+
 actions['pin-forgot'] = async () => {
   if (await confirmSheet('Forgot your PIN?', 'You’ll be signed out on this phone. Your data is safe online: sign in again with your password to get it back.', 'Sign out', true)) {
     try { await api('signOut'); } catch (e) { /* offline: the session is forgotten anyway */ }
@@ -309,10 +423,47 @@ actions['pin-toggle'] = async (el) => {
     if (!p) return;
     if (await hashPin(p, M.pinSalt) !== M.pinHash) return toast('Wrong PIN');
     M.pinHash = '';
+    M.bio = null; // Face ID / fingerprint only ever stood in for the PIN
     toast('App lock off');
   }
   persist();
   render();
+};
+
+actions['bio-toggle'] = async (el) => {
+  const want = el.checked;
+  el.checked = !want; // stays as it was unless the phone confirms
+  if (!want) {
+    M.bio = null;
+    persist(true);
+    render();
+    toast(bioLabel() + ' turned off. Your PIN opens the app.');
+    return;
+  }
+  bioRead();
+  if (!M.pinHash || Bio.state !== 'ready') return;
+  el.disabled = true;
+  try {
+    if (Bio.kind === 'native') {
+      const r = await nativeBio(false); // she shows it once, so it's known to work
+      if (r !== 'ok') {
+        if (r === 'lockout') toast('Too many tries. Try again later, or use your PIN.');
+        else if (r === 'error') toast(bioLabel() + ' couldn’t be checked. Try again.');
+        return;
+      }
+      M.bio = { kind: 'native' };
+    } else {
+      M.bio = await passkeyMake();
+    }
+  } catch (e) {
+    if (!e || e.name !== 'NotAllowedError') toast(bioLabel() + ' couldn’t be set up on this phone.');
+    return;
+  } finally {
+    el.disabled = false;
+  }
+  persist(true);
+  render();
+  toast('✓ ' + bioLabel() + ' unlocks the app');
 };
 
 // ============================== start-up ==============================
@@ -366,7 +517,8 @@ document.addEventListener('visibilitychange', () => {
   }
   checkForUpdate();
   if (!M.token) return;
-  if (M.pinHash && Date.now() - (M.hiddenAt || 0) > 60000) lockApp();
+  if (locked) bioTry(true); // still locked from before: ask for Face ID / fingerprint again
+  else if (M.pinHash && Date.now() - (M.hiddenAt || 0) > 60000) lockApp();
   sync(); // back in front: fetch anything new straight away
   autoRecordBills();
   render(); // "today" may have changed

@@ -555,6 +555,7 @@ function settingsScreen() {
         <label class="switch"><input type="checkbox" data-change="privacy-toggle" ${M.hideAmounts ? 'checked' : ''} aria-label="Hide amounts"><i></i></label></div>
       <div class="item"><span class="bubble">🔒</span><span class="grow"><span class="title">App lock</span><span class="meta">Ask for a 4-digit PIN when opening the app</span></span>
         <label class="switch"><input type="checkbox" data-change="pin-toggle" ${M.pinHash ? 'checked' : ''} aria-label="App lock"><i></i></label></div>
+      ${M.pinHash ? bioRow() : ''}
       <div class="item"><span class="bubble">☁️</span><span class="grow"><span class="title">Online backup (encrypted)</span>
         <span class="meta">${CFG.demo ? 'Off in the preview' : syncState.error && waiting ? esc(syncState.error) : waiting ? waiting + ' change(s) waiting to upload' : 'Backed up ' + ago(M.lastSync)}</span></span>
         <button class="btn sm" data-a="sync-now" aria-label="Back up now">${icon('sync')}</button></div>
@@ -567,6 +568,18 @@ function settingsScreen() {
 }
 
 // Settings ▸ Notifications: on/off and a test.
+// Under App lock: Face ID on iPhone, fingerprint or face on Android (main.js), when this phone can do it.
+function bioRow() {
+  const B = bioRead();
+  const row = (meta, end) => `<div class="item"><span class="bubble">${bioIcon()}</span><span class="grow"><span class="title">Unlock with ${esc(B.name)}</span><span class="meta">${meta}</span></span>${end || ''}</div>`;
+  if (B.state === 'old') return row('Needs the new Android app', `<a class="btn sm" href="${ANDROID_APK}">Get it</a>`);
+  if (B.state === 'none') return row('Add a fingerprint or face in Android Settings ▸ Security first');
+  if (B.state !== 'ready') return '';
+  const on = bioOn();
+  return row(on ? 'On. Your PIN still works when it doesn’t.' : 'Opens by itself when the app starts. Your PIN stays as the backup.',
+    `<label class="switch"><input type="checkbox" data-change="bio-toggle" ${on ? 'checked' : ''} aria-label="Unlock with ${esc(B.name)}"><i></i></label>`);
+}
+
 function notificationsSection(ps) {
   const why = {
     on: 'Bill reminders and data requests',

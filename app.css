@@ -459,3 +459,4 @@ button.banner { border: 0; width: 100%; text-align: left; color: var(--ink); }
 .pin-pad button:active { background: var(--line); }
 .pin-pad .blank { visibility: hidden; }
 .pin-pad .fn { background: transparent; box-shadow: none; font-size: 16px; font-weight: 600; color: var(--ink-2); display: grid; place-items: center; }
+.lock-bio { justify-self: center; gap: 8px; margin-top: 4px; }
