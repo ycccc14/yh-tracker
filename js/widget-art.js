@@ -57,7 +57,46 @@ const WidgetArt = (() => {
       g.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, part));
       g.stroke();
     }
-    if (emoji) text(g, emoji, cx, cy + r * 0.34, r * 0.95, { align: 'center', color: '#000', decor: true });
+    if (emoji) centredEmoji(g, emoji, cx, cy, r * 0.95);
+  }
+  // Puts an emoji's visible middle on (cx, cy). Text alignment can't be trusted for emoji: Safari measures some
+  // (🛍️ and others with a hidden style character) wrongly, so centre-aligned ones landed beside the ring. So it's
+  // drawn on a scratch canvas first and the box around its coloured pixels is what gets centred.
+  const emojiCache = new Map();
+  function centredEmoji(g, emoji, cx, cy, size) {
+    const scale = g.getTransform().a || 1;
+    const key = `${emoji}|${size}|${scale}`;
+    let cut = emojiCache.get(key);
+    if (!cut) {
+      const px = Math.ceil(size * scale);
+      const scratch = document.createElement('canvas');
+      scratch.width = scratch.height = px * 3;
+      const s = scratch.getContext('2d');
+      s.font = `500 ${px}px ${FONT}`;
+      s.textAlign = 'left';
+      s.textBaseline = 'alphabetic';
+      s.fillStyle = '#000';
+      s.fillText(String(emoji), px, px * 2);
+      const data = s.getImageData(0, 0, scratch.width, scratch.height).data;
+      let x0 = scratch.width, y0 = scratch.height, x1 = -1, y1 = -1;
+      for (let y = 0; y < scratch.height; y++) {
+        for (let x = 0; x < scratch.width; x++) {
+          if (data[(y * scratch.width + x) * 4 + 3] > 8) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      cut = x1 < 0 ? null : { scratch, x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+      if (emojiCache.size > 60) emojiCache.clear();
+      emojiCache.set(key, cut);
+    }
+    if (!cut) return;
+    const w = cut.w / scale;
+    const h = cut.h / scale;
+    g.drawImage(cut.scratch, cut.x, cut.y, cut.w, cut.h, cx - w / 2, cy - h / 2, w, h);
   }
   function line(g, x1, y, x2, color) {
     if (!shapes()) return;
