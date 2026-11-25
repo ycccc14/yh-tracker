@@ -183,7 +183,7 @@ actions['forgot-go'] = (el) => busy(el, 'Saving…', async () => {
 actions['sign-out'] = async () => {
   const waiting = unsentCount();
   const ok = CFG.demo ? await confirmSheet('Clear the preview data?', 'The sample data is removed. Open the preview again for a fresh copy.', 'Clear', true)
-    : await confirmSheet('Sign out on this phone?', (waiting ? `${waiting} change(s) haven’t uploaded yet and will be lost. ` : '') +
+    : await confirmSheet('Sign out on this phone?', (waiting ? `${changesWord(waiting)} ${waiting === 1 ? 'hasn’t' : 'haven’t'} uploaded yet and will be lost. ` : '') +
       'Everything else is backed up online. Sign in again any time to get it back.', 'Sign out', true);
   if (!ok) return;
   try { await api('signOut'); } catch (e) { /* offline: the session is forgotten anyway */ }

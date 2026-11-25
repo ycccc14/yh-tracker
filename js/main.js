@@ -119,6 +119,23 @@ actions['sync-now'] = async (el) => {
   el.disabled = false;
   toast(syncState.error || 'Backed up ✓');
 };
+// Home ▸ "haven't come down yet" (a new phone whose first download failed).
+actions['first-sync-retry'] = async (el) => {
+  el.disabled = true;
+  syncState.error = '';
+  emit(); // back to "Getting your data…" while it tries
+  await sync();
+  if (syncState.error) toast(syncState.error, 4000);
+};
+// Home ▸ "couldn't be opened": fetch the whole backup again and open what it can.
+actions['unread-retry'] = async (el) => {
+  el.disabled = true;
+  M.fullCheck = 0;
+  await sync();
+  el.disabled = false;
+  const n = unreadCount();
+  toast(syncState.error || (n ? `${n === 1 ? '1 record' : n + ' records'} still can’t be opened. Tell YC.` : 'All records opened ✓'), 4000);
+};
 actions['push-on'] = async (el) => {
   el.disabled = true;
   try {

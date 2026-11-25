@@ -49,16 +49,18 @@ function amt(x, opts) {
 }
 function money(x, opts) {
   opts = opts || {};
-  const v = Number(x) || 0;
+  const v = Math.round((Number(x) || 0) * 100) / 100; // to cents first: −0.001 is RM 0.00, not −RM 0.00
   const cur = setting('currency') || 'RM';
   const sign = v < 0 ? '−' : opts.plus && v > 0 ? '+' : '';
   return sign + cur + ' ' + numFmt.format(Math.abs(v));
 }
 // Short form for chart labels: RM 1.2k
 function moneyShort(x) {
-  const v = Math.abs(x);
-  const s = v >= 1e6 ? (v / 1e6).toFixed(1) + 'm' : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + 'k' : String(Math.round(v));
-  return (x < 0 ? '−' : '') + s;
+  const v = Math.abs(Number(x) || 0);
+  const k = v / 1e3;
+  // Picked after rounding, so 9,999 is "10k" (not "10.0k") and 999,999 is "1.0m" (not "1000k").
+  const s = Math.round(v) < 1e3 ? String(Math.round(v)) : Math.round(k) < 1e3 ? (k >= 9.95 ? String(Math.round(k)) : k.toFixed(1)) + 'k' : (v / 1e6).toFixed(1) + 'm';
+  return (x < 0 && s !== '0' ? '−' : '') + s;
 }
 
 // ============================== storage ==============================
@@ -279,6 +281,14 @@ function budgetOf(c, ym) {
 const reminders = () => cached('rems', () => live('reminders').sort((a, b) => (a.due > b.due ? 1 : a.due < b.due ? -1 : 0)));
 const activeBills = () => reminders().filter((r) => r.active && Shared.isDate(r.due));
 const billsAttention = () => cached('attn', () => Shared.billsNeedingAttention(activeBills(), today()));
+// Home's Bills card: every bill the Bills screen marks overdue, due today or due soon, so the two
+// never disagree (a bill reminded 0 days ahead is still "Due tomorrow" there). The icon number and
+// notifications keep to each bill's own reminder window (billsAttention).
+const billsSoon = () => cached('soon', () => {
+  const t = today();
+  return activeBills().map((r) => Object.assign({ rem: r }, Shared.billStatus(r, t)))
+    .filter((x) => x.key !== 'later').sort((a, b) => a.days - b.days);
+});
 
 // ============================== talking to the sheet ==============================
 
@@ -333,7 +343,9 @@ function reminderSchedule() {
   return { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', list: list.slice(0, 150) };
 }
 
-const unsentCount = () => TABLES.reduce((n, t) => n + Object.keys(M.dirty[t]).length, 0);
+const changesWord = (n) => (n === 1 ? '1 change' : n + ' changes');
+const unsentCount = () =>TABLES.reduce((n, t) => n + Object.keys(M.dirty[t]).length, 0);
+const unreadCount = () => Object.keys(M.unread || {}).length; // backed-up records this phone couldn't open
 
 function scheduleSync(ms) {
   clearTimeout(syncTimer);
@@ -365,19 +377,47 @@ async function sync() {
       if ((M.answers || []).length) await sendAnswers(); // answers to data requests go first
       const sch = reminderSchedule();
       const schText = JSON.stringify(sch);
-      const res = await api('sync', { since: M.cursor, changes, schedule: schText !== M.schedSent ? sch : undefined });
+      // Once after this update: fetch everything again, to bring back any record an older version
+      // skipped because it couldn't be opened (it moved the cursor on without it).
+      const since = M.fullCheck ? M.cursor : 0;
+      const res = await api('sync', { since, changes, schedule: schText !== M.schedSent ? sch : undefined });
       let got = 0;
+      // A record that can't be opened is kept (still sealed) in M.unread and tried again on every
+      // sync, so moving the cursor on never loses it; Home says how many there are.
+      const unread = Object.assign({}, M.unread);
+      const seen = {};
       for (const t of Object.keys(res.changes || {})) {
         if (!S[t]) continue;
         for (const enc of res.changes[t]) {
+          const k = t + '|' + enc.id;
+          seen[k] = true;
           let rec;
-          try { rec = await Crypt.openJson(key, enc.data); } catch (e) { console.error('Could not open a record', t, enc.id); continue; }
+          try { rec = await Crypt.openJson(key, enc.data); } catch (e) {
+            // Kept in M.unread, retried and shown on Home, so a warning: not an error.
+            console.warn('Could not open a record (kept, will try again)', t, enc.id);
+            unread[k] = { t, id: String(enc.id), updatedAt: enc.updatedAt, data: enc.data };
+            continue;
+          }
+          delete unread[k];
           const mine = S[t][rec.id];
           if (mine && M.dirty[t][rec.id] && mine.updatedAt > rec.updatedAt) continue; // changed again here since
           S[t][rec.id] = rec;
           got++;
         }
       }
+      for (const k of Object.keys(unread)) {
+        const u = unread[k];
+        if (seen[k] || !S[u.t]) continue;
+        let rec;
+        try { rec = await Crypt.openJson(key, u.data); } catch (e) { continue; }
+        delete unread[k];
+        const mine = S[u.t][rec.id];
+        if (mine && mine.updatedAt > rec.updatedAt) continue; // a newer copy is already here
+        S[u.t][rec.id] = rec;
+        got++;
+      }
+      M.unread = unread;
+      M.fullCheck = 1;
       M.inboxDone = (M.inboxDone || []).filter((a) => !taken.some((b) => b.id === a.id));
       if ((res.changes || {}).inbox) await takeWidgetInbox(res.changes.inbox);
       M.schedSent = schText;

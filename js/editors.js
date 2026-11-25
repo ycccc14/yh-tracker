@@ -116,7 +116,9 @@ function saveTx(sh) {
   const st = sh._st;
   const amount = Calc.evaluate(st.expr);
   const box = $('.amount-box', sh);
-  if (!amount || amount <= 0) { shake(box); return toast('Type the amount first'); }
+  if (amount === null) { shake(box); return toast('Can’t divide by 0'); }
+  if (amount < 0) { shake(box); return toast('The sum is below zero. Check it.'); }
+  if (!amount) { shake(box); return toast('Type the amount first'); }
   if (st.type !== 'transfer' && !st.categoryId) { shake($('.cat-grid', sh)); return toast('Pick a category'); }
   if (!st.accountId || !acc(st.accountId)) return toast('Pick an account');
   if (st.type === 'transfer' && (!st.toAccountId || st.toAccountId === st.accountId)) return toast('Pick a different account to move the money to');
@@ -544,7 +546,7 @@ actions['bill-save'] = () => {
   put('reminders', st);
   closeSheet();
   const made = autoRecordBills();
-  toast(made ? `Saved ✓ ${made} payment(s) recorded` : `Saved ✓ Due ${Shared.relDays(Shared.daysBetween(today(), S.reminders[st.id].due))}`);
+  toast(made ? `Saved ✓ ${made === 1 ? '1 payment' : made + ' payments'} recorded` : `Saved ✓ Due ${Shared.relDays(Shared.daysBetween(today(), S.reminders[st.id].due))}`);
   if (sh._isNew && pushState() === 'default' && !CFG.demo) setTimeout(() => toast('Tip: turn on notifications at the top of Bills', 3500), 2300);
 };
 actions['bill-delete'] = async () => {

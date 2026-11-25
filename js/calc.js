@@ -26,7 +26,7 @@ const Calc = (function () {
     if (key === 'back') return expr.slice(0, -1);
     if (key === '=') {
       const v = evaluate(expr);
-      return v === null ? expr : fromNumber(v);
+      return v === null || v < 0 ? expr : fromNumber(v); // below zero: keep the sum, so the next key can't make "-5" into "-53"
     }
     if (isOp(key)) {
       if (!expr) return '';

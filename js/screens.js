@@ -187,19 +187,30 @@ function homeScreen() {
   const mt = monthTotals(ym);
   const prev = spentUpTo(shiftMonth(ym, -1), +today().slice(8));
   const bud = budgetTotals(ym);
-  const attn = billsAttention();
+  const attn = billsSoon();
   let out = screenHead(setting('name') ? `${hello}, ${esc(setting('name'))}` : hello, { sub: fmtDate(today(), true),
     right: eyeBtn() + `<button class="icon-btn" data-a="go" data-to="settings" aria-label="Settings">${icon('settings')}</button>` });
 
   if (CFG.demo) out += `<div class="banner"><p>🧪 <b>Preview with sample data.</b> Nothing here is saved to the cloud. <button class="link" data-a="demo-reset">Start over</button></p></div>`;
-  if (!CFG.demo && !M.lastSync) out += `<div class="banner"><p>⏳ Getting your data from your online backup…</p></div>`;
+  if (!CFG.demo && !M.lastSync) {
+    // First download on this phone. If it failed, say so and offer a retry, instead of "Getting…" for ever.
+    out += syncState.error
+      ? `<div class="banner warn"><p>📡 <b>Your records haven’t come down yet.</b> ${esc(syncState.error.replace(/ Your changes are safe on this phone\.$/, ''))} They’re safe in your online backup.</p>
+        <button class="btn block" data-a="first-sync-retry">Try again</button></div>`
+      : `<div class="banner"><p>⏳ Getting your data from your online backup…</p></div>`;
+  }
   if (!CFG.demo && pushState() === 'default' && !M.pushNagOff) {
     out += `<div class="banner"><div class="row"><p class="grow">🔔 <b>Turn on notifications</b> for bill reminders and when YC asks for your data.</p>
       <button class="icon-btn plain" data-a="push-nag-off" aria-label="Not now">${icon('close')}</button></div>
       <button class="btn primary block" data-a="push-on">Turn on notifications</button></div>`;
   }
   if (pendingRequests().length) out += `<button class="banner tap-card" data-a="request-review"><p>📨 <b>YC asks for a copy of your data.</b> Tap to approve or decline.</p></button>`;
-  if (!syncState.online && unsentCount()) out += `<div class="banner warn"><p>📡 You’re offline. ${unsentCount()} change(s) are saved on this phone and will upload when you’re back online.</p></div>`;
+  if (unreadCount()) {
+    const n = unreadCount();
+    out += `<div class="banner warn"><p>⚠️ <b>${n === 1 ? '1 record' : n + ' records'} from your online backup couldn’t be opened on this phone.</b> ${n === 1 ? 'It’s' : 'They’re'} kept safe and tried again each time the app backs up.</p>
+      <button class="btn block" data-a="unread-retry">Try again now</button></div>`;
+  }
+  if (!syncState.online && unsentCount()) out += `<div class="banner warn"><p>📡 You’re offline. ${changesWord(unsentCount())} ${unsentCount() === 1 ? 'is' : 'are'} saved on this phone and will upload when you’re back online.</p></div>`;
 
   let trend = '';
   if (prev > 0 && !M.hideAmounts) {
@@ -557,7 +568,7 @@ function settingsScreen() {
         <label class="switch"><input type="checkbox" data-change="pin-toggle" ${M.pinHash ? 'checked' : ''} aria-label="App lock"><i></i></label></div>
       ${M.pinHash ? bioRow() : ''}
       <div class="item"><span class="bubble">☁️</span><span class="grow"><span class="title">Online backup (encrypted)</span>
-        <span class="meta">${CFG.demo ? 'Off in the preview' : syncState.error && waiting ? esc(syncState.error) : waiting ? waiting + ' change(s) waiting to upload' : 'Backed up ' + ago(M.lastSync)}</span></span>
+        <span class="meta">${CFG.demo ? 'Off in the preview' : syncState.error && waiting ? esc(syncState.error) : waiting ? changesWord(waiting) + ' waiting to upload' : 'Backed up ' + ago(M.lastSync)}</span></span>
         <button class="btn sm" data-a="sync-now" aria-label="Back up now">${icon('sync')}</button></div>
       <button class="item" data-a="export"><span class="bubble">📤</span><span class="grow"><span class="title">Export to a spreadsheet file</span><span class="meta">All records as CSV</span></span>${icon('download')}</button>
     </section>
